@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import ApiExplorer from "./ApiExplorer.jsx";
 
 const LEGACY_STORAGE_KEY = "tower_oauth_result_v1";
@@ -131,7 +131,6 @@ export default function App() {
   const [now, setNow] = useState(() => Date.now());
   const [activeTab, setActiveTab] = useState("creds");
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || "system");
-  const fileInputRef = useRef(null);
 
   const creds = store.items.find((item) => item.id === store.activeId) || store.items[0] || null;
 
@@ -338,59 +337,6 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleExport() {
-    if (store.items.length === 0) return;
-    const blob = new Blob([JSON.stringify({ version: 1, ...store }, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "tower-oauth-accounts.json";
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setStatus("已导出本地账号配置");
-  }
-
-  function handleImportFile(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result || ""));
-        const rawItems = Array.isArray(parsed?.items)
-          ? parsed.items
-          : parsed?.token?.access_token
-            ? [parsed]
-            : [];
-        const validItems = rawItems.filter((item) => item?.token?.access_token);
-        if (validItems.length === 0) {
-          setError("导入失败：文件中未找到有效凭据");
-          return;
-        }
-        const merged = [...store.items];
-        for (const item of validItems) {
-          const id = getAccountId(item);
-          const entry = { ...item, id };
-          const idx = merged.findIndex((existing) => existing.id === id);
-          if (idx >= 0) merged[idx] = entry;
-          else merged.push(entry);
-        }
-        const nextActive = parsed?.activeId && merged.some((i) => i.id === parsed.activeId)
-          ? parsed.activeId
-          : merged[0].id;
-        persistStore({ activeId: nextActive, items: merged });
-        setError("");
-        setStatus(`已导入 ${validItems.length} 个账号凭据`);
-      } catch {
-        setError("导入失败：JSON 格式无效");
-      }
-    };
-    reader.readAsText(file);
   }
 
   const user = creds?.user;
@@ -649,39 +595,6 @@ export default function App() {
                 欢迎回到 Tower OAuth 控制台 · 所有凭据仅安全存储于当前浏览器
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImportFile}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer shadow-xs dark:border-slate-700 dark:bg-[#171522] dark:text-slate-200 dark:hover:border-violet-600"
-              >
-                导入配置
-              </button>
-              {store.items.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleExport}
-                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer shadow-xs dark:border-slate-700 dark:bg-[#171522] dark:text-slate-200 dark:hover:border-violet-600"
-                >
-                  导出配置
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleStartLogin}
-                className="inline-flex items-center gap-1.5 rounded-full bg-violet-600 px-5 py-2 text-xs sm:text-sm font-medium text-white shadow-sm shadow-violet-600/25 hover:bg-violet-700 cursor-pointer"
-              >
-                <span>+</span>
-                <span>{store.items.length > 0 ? "添加账号" : "登录 Tower 账号"}</span>
-              </button>
-            </div>
           </div>
 
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
@@ -735,6 +648,14 @@ export default function App() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              onClick={handleStartLogin}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-violet-600 px-3 py-1 text-xs font-medium text-white shadow-sm shadow-violet-600/25 hover:bg-violet-700 cursor-pointer"
+            >
+              <span aria-hidden="true">+</span>
+              添加账号
+            </button>
           </div>
         )}
 
