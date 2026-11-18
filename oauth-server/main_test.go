@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testConfig(towerURL string) Config {
@@ -17,6 +21,35 @@ func testConfig(towerURL string) Config {
 		BaseURL:      towerURL,
 		HTTPClient:   http.DefaultClient,
 	}
+}
+
+func registerTestUser(t *testing.T, mux http.Handler, username, password string) (*http.Cookie, User, string) {
+	t.Helper()
+	body := `{"username":"` + username + `","password":"` + password + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("registerTestUser(%s) failed: %d %s", username, rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		User         User   `json:"user"`
+		SessionToken string `json:"session_token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode register response: %v", err)
+	}
+	var sessCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			sessCookie = c
+		}
+	}
+	if sessCookie == nil {
+		t.Fatalf("expected %s cookie", sessionCookieName)
+	}
+	return sessCookie, resp.User, resp.SessionToken
 }
 
 func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
@@ -36,7 +69,7 @@ func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Tower OAuth 凭据中心") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AgentsTower") {
 		t.Fatalf("unexpected home response: %d", rec.Code)
 	}
 
@@ -50,7 +83,9 @@ func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
 
 func TestLoginRedirectsWithStateCookie(t *testing.T) {
 	mux := newMux(testConfig("https://tower.im"))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req.AddCookie(sess)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -69,7 +104,9 @@ func TestLoginRedirectsWithStateCookie(t *testing.T) {
 
 func TestCallbackRejectsInvalidState(t *testing.T) {
 	mux := newMux(testConfig("https://tower.im"))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=abc&state=wrong", nil)
+	req.AddCookie(sess)
 	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "expected"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -83,6 +120,7 @@ func TestCallbackRejectsInvalidState(t *testing.T) {
 	}
 
 	resReq := httptest.NewRequest(http.MethodGet, "/api/auth/result", nil)
+	resReq.AddCookie(sess)
 	resReq.AddCookie(cookies[0])
 	resRec := httptest.NewRecorder()
 	mux.ServeHTTP(resRec, resReq)
@@ -118,7 +156,9 @@ func TestCallbackExchangesCodeAndFetchesUser(t *testing.T) {
 	defer tower.Close()
 
 	mux := newMux(testConfig(tower.URL))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state=ok&format=json", nil)
+	req.AddCookie(sess)
 	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "ok"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -155,7 +195,9 @@ func TestOTPRequiredAndSubmit(t *testing.T) {
 	defer tower.Close()
 
 	mux := newMux(testConfig(tower.URL))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state=ok&format=json", nil)
+	req.AddCookie(sess)
 	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "ok"})
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -165,6 +207,7 @@ func TestOTPRequiredAndSubmit(t *testing.T) {
 
 	form := url.Values{"code": {"authcode"}, "captcha": {"654321"}}
 	otpReq := httptest.NewRequest(http.MethodPost, "/oauth2/otp?format=json", strings.NewReader(form.Encode()))
+	otpReq.AddCookie(sess)
 	otpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	otpRec := httptest.NewRecorder()
 	mux.ServeHTTP(otpRec, otpReq)
@@ -187,7 +230,9 @@ func TestRefreshToken(t *testing.T) {
 	defer tower.Close()
 
 	mux := newMux(testConfig(tower.URL))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 	req := httptest.NewRequest(http.MethodPost, "/oauth2/refresh", strings.NewReader(`{"refresh_token":"ref-1","access_token":"old-acc"}`))
+	req.AddCookie(sess)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -215,6 +260,7 @@ func TestManualOOBCode(t *testing.T) {
 	cfg := testConfig(tower.URL)
 	cfg.RedirectURI = "urn:ietf:wg:oauth:2.0:oob"
 	mux := newMux(cfg)
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 
 	cfgReq := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	cfgRec := httptest.NewRecorder()
@@ -225,6 +271,7 @@ func TestManualOOBCode(t *testing.T) {
 
 	form := url.Values{"code": {"oob-code"}}
 	req := httptest.NewRequest(http.MethodPost, "/oauth2/code?format=json", strings.NewReader(form.Encode()))
+	req.AddCookie(sess)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -274,8 +321,10 @@ func TestVerifyToken(t *testing.T) {
 	defer tower.Close()
 
 	mux := newMux(testConfig(tower.URL))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/api/verify", strings.NewReader(`{"access_token":"good-token"}`))
+	okReq.AddCookie(sess)
 	okRec := httptest.NewRecorder()
 	mux.ServeHTTP(okRec, okReq)
 	if okRec.Code != http.StatusOK || !strings.Contains(okRec.Body.String(), `"valid":true`) {
@@ -283,6 +332,7 @@ func TestVerifyToken(t *testing.T) {
 	}
 
 	badReq := httptest.NewRequest(http.MethodPost, "/api/verify", strings.NewReader(`{"access_token":"bad-token"}`))
+	badReq.AddCookie(sess)
 	badRec := httptest.NewRecorder()
 	mux.ServeHTTP(badRec, badReq)
 	if badRec.Code != http.StatusOK || !strings.Contains(badRec.Body.String(), `"valid":false`) {
@@ -351,8 +401,10 @@ func TestAPIProxy(t *testing.T) {
 	defer tower.Close()
 
 	mux := newMux(testConfig(tower.URL))
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
 
 	okReq := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"method":"GET","path":"/api/v1/teams","query":"page=1","access_token":"tok-1"}`))
+	okReq.AddCookie(sess)
 	okRec := httptest.NewRecorder()
 	mux.ServeHTTP(okRec, okReq)
 	if okRec.Code != http.StatusOK || !strings.Contains(okRec.Body.String(), `"Team A"`) {
@@ -360,9 +412,596 @@ func TestAPIProxy(t *testing.T) {
 	}
 
 	badReq := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"method":"GET","path":"/oauth/token","access_token":"tok-1"}`))
+	badReq.AddCookie(sess)
 	badRec := httptest.NewRecorder()
 	mux.ServeHTTP(badRec, badReq)
 	if badRec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for non-api path, got %d", badRec.Code)
+	}
+}
+
+func TestSQLiteStorePersistenceAndAccountManagement(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "agents-tower.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+
+	saved1, err := store.SaveLogin(&UserInfo{ID: "u-100", Nickname: "Bob", Email: "bob@tower.im"}, TokenResponse{
+		AccessToken:  "acc-1",
+		RefreshToken: "ref-1",
+		ExpiresIn:    7200,
+	})
+	if err != nil {
+		t.Fatalf("SaveLogin: %v", err)
+	}
+	if !strings.HasPrefix(saved1.MCPAPIKey, "at_sk-") {
+		t.Fatalf("expected at_sk- prefix, got %q", saved1.MCPAPIKey)
+	}
+
+	// Re-login preserves existing MCP API Key so agent configs don't break
+	saved2, err := store.SaveLogin(&UserInfo{ID: "u-100", Nickname: "Bob2"}, TokenResponse{
+		AccessToken: "acc-2",
+		ExpiresIn:   7200,
+	})
+	if err != nil {
+		t.Fatalf("SaveLogin 2: %v", err)
+	}
+	if saved2.MCPAPIKey != saved1.MCPAPIKey || saved2.RefreshToken != "ref-1" || saved2.AccessToken != "acc-2" {
+		t.Fatalf("unexpected updated account: %+v", saved2)
+	}
+	_ = store.Close()
+
+	// Reopen SQLite file to verify persistence on disk
+	reopened, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer reopened.Close()
+
+	fetched, err := reopened.GetByMCPKey(saved1.MCPAPIKey)
+	if err != nil || fetched.Nickname != "Bob2" || fetched.AccessToken != "acc-2" {
+		t.Fatalf("unexpected reopened account: %+v, err=%v", fetched, err)
+	}
+
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/api/v1/user" && req.Header.Get("Authorization") == "Bearer sync-tok" {
+			_, _ = writer.Write([]byte(`{"data":{"id":"u-sync","attributes":{"nickname":"SyncUser","email":"sync@tower.im"}}}`))
+			return
+		}
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer tower.Close()
+
+	cfg := testConfig(tower.URL)
+	cfg.Store = reopened
+	mux := newMux(cfg)
+	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
+
+	syncReq := httptest.NewRequest(http.MethodPost, "/api/accounts/sync", strings.NewReader(`{"token":{"access_token":"sync-tok","refresh_token":"sync-ref"}}`))
+	syncReq.AddCookie(sess)
+	syncRec := httptest.NewRecorder()
+	mux.ServeHTTP(syncRec, syncReq)
+	if syncRec.Code != http.StatusOK {
+		t.Fatalf("sync failed: %d %s", syncRec.Code, syncRec.Body.String())
+	}
+	var syncRes LoginResult
+	if err := json.Unmarshal(syncRec.Body.Bytes(), &syncRes); err != nil || !strings.HasPrefix(syncRes.MCPAPIKey, "at_sk-") {
+		t.Fatalf("invalid sync response: %+v err=%v", syncRes, err)
+	}
+
+	rotReq := httptest.NewRequest(http.MethodPost, "/api/mcp-key/rotate", strings.NewReader(`{"credential":"`+syncRes.MCPAPIKey+`"}`))
+	rotReq.AddCookie(sess)
+	rotRec := httptest.NewRecorder()
+	mux.ServeHTTP(rotRec, rotReq)
+	if rotRec.Code != http.StatusOK || strings.Contains(rotRec.Body.String(), syncRes.MCPAPIKey) {
+		t.Fatalf("rotate failed: %d %s", rotRec.Code, rotRec.Body.String())
+	}
+	var rotRes struct {
+		MCPAPIKey string `json:"mcp_api_key"`
+	}
+	_ = json.Unmarshal(rotRec.Body.Bytes(), &rotRes)
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/account", strings.NewReader(`{"credential":"`+rotRes.MCPAPIKey+`"}`))
+	delReq.AddCookie(sess)
+	delRec := httptest.NewRecorder()
+	mux.ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("delete failed: %d %s", delRec.Code, delRec.Body.String())
+	}
+	if _, err := reopened.GetByMCPKey(rotRes.MCPAPIKey); err == nil {
+		t.Fatalf("expected deleted account to be gone")
+	}
+}
+
+func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
+	refreshed := false
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/oauth/token":
+			_ = req.ParseForm()
+			if req.FormValue("grant_type") != "refresh_token" || req.FormValue("refresh_token") != "ref-expired" {
+				t.Fatalf("unexpected refresh form: %v", req.Form)
+			}
+			refreshed = true
+			_ = json.NewEncoder(writer).Encode(TokenResponse{
+				AccessToken:  "acc-fresh",
+				RefreshToken: "ref-fresh",
+				ExpiresIn:    7200,
+				CreatedAt:    time.Now().Unix(),
+			})
+		case "/api/v1/teams":
+			if req.Header.Get("Authorization") != "Bearer acc-fresh" {
+				writer.WriteHeader(http.StatusUnauthorized)
+				_, _ = writer.Write([]byte(`{"error":"expired"}`))
+				return
+			}
+			_, _ = writer.Write([]byte(`{"data":[{"id":"team-1","attributes":{"name":"AI Team"}}]}`))
+		case "/api/v1/todolists/tl-1/todos":
+			if req.Header.Get("Authorization") != "Bearer acc-fresh" {
+				t.Fatalf("expected fresh token")
+			}
+			if req.Method == http.MethodGet {
+				if req.URL.Query().Get("page[number]") != "2" || req.URL.Query().Get("completed_todo") != "true" {
+					t.Fatalf("unexpected query: %s", req.URL.RawQuery)
+				}
+				_, _ = writer.Write([]byte(`{"data":[{"id":"todo-1"}]}`))
+				return
+			}
+			rawBody, _ := io.ReadAll(req.Body)
+			var bodyMap map[string]map[string]any
+			_ = json.Unmarshal(rawBody, &bodyMap)
+			if bodyMap["todo"]["content"] != "Ship MCP" || bodyMap["todo"]["select_custom"] != "v1" {
+				t.Fatalf("unexpected create todo body: %s", string(rawBody))
+			}
+			_, _ = writer.Write([]byte(`{"data":{"id":"todo-new","attributes":{"content":"Ship MCP"}}}`))
+		default:
+			http.NotFound(writer, req)
+		}
+	}))
+	defer tower.Close()
+
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+
+	// Seed an already-expired token so MCP call triggers automatic refresh!
+	acc, err := store.SaveLogin(&UserInfo{ID: "u-mcp", Nickname: "AgentUser"}, TokenResponse{
+		AccessToken:  "acc-old",
+		RefreshToken: "ref-expired",
+		ExpiresIn:    3600,
+		CreatedAt:    time.Now().Add(-2 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("SaveLogin: %v", err)
+	}
+
+	cfg := testConfig(tower.URL)
+	cfg.Store = store
+	mux := newMux(cfg)
+
+	// 1. Unauthorized without header
+	unauthReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	unauthRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without key, got %d", unauthRec.Code)
+	}
+
+	// 2. Initialize with AGENTS_TOWER_API_KEY header (also auto-refreshes expired token!)
+	initReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}`))
+	initReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	initRec := httptest.NewRecorder()
+	mux.ServeHTTP(initRec, initReq)
+	if initRec.Code != http.StatusOK || !strings.Contains(initRec.Body.String(), `"AgentsTower"`) {
+		t.Fatalf("initialize failed: %d %s", initRec.Code, initRec.Body.String())
+	}
+	if !refreshed {
+		t.Fatalf("expected expired Tower token to be auto-refreshed on MCP request")
+	}
+	if initRec.Header().Get("Mcp-Session-Id") == "" {
+		t.Fatalf("expected Mcp-Session-Id header")
+	}
+
+	// 3. Notification returns 202 Accepted
+	notifReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	notifReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	notifRec := httptest.NewRecorder()
+	mux.ServeHTTP(notifRec, notifReq)
+	if notifRec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 for notification, got %d", notifRec.Code)
+	}
+
+	// 4. tools/list
+	listReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+	listReq.Header.Set("Authorization", "Bearer "+acc.MCPAPIKey)
+	listRec := httptest.NewRecorder()
+	mux.ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"tower_create_todo"`) {
+		t.Fatalf("tools/list failed: %d %s", listRec.Code, listRec.Body.String())
+	}
+
+	// 5. tools/call GET with query parameter wire mapping (page -> page[number])
+	callListReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1","page":2,"completed_todo":true}}}`))
+	callListReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	callListRec := httptest.NewRecorder()
+	mux.ServeHTTP(callListRec, callListReq)
+	if callListRec.Code != http.StatusOK || !strings.Contains(callListRec.Body.String(), `todo-1`) {
+		t.Fatalf("tools/call list_todos failed: %d %s", callListRec.Code, callListRec.Body.String())
+	}
+
+	// 6. tools/call POST with envelope + custom_fields merge
+	callCreateReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tower_create_todo","arguments":{"todolist_id":"tl-1","content":"Ship MCP","custom_fields":{"select_custom":"v1"}}}}`))
+	callCreateReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	callCreateRec := httptest.NewRecorder()
+	mux.ServeHTTP(callCreateRec, callCreateReq)
+	if callCreateRec.Code != http.StatusOK || !strings.Contains(callCreateRec.Body.String(), `todo-new`) {
+		t.Fatalf("tools/call create_todo failed: %d %s", callCreateRec.Code, callCreateRec.Body.String())
+	}
+}
+
+func TestUserAuthQuickLoginRolesAndCLI(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "users.db")
+	store, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+
+	cfg := testConfig("https://tower.im")
+	cfg.Store = store
+	mux := newMux(cfg)
+
+	// 1. Unauthenticated access to protected endpoints returns 401
+	unauthReq := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
+	unauthRec := httptest.NewRecorder()
+	mux.ServeHTTP(unauthRec, unauthReq)
+	if unauthRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauth /api/accounts, got %d", unauthRec.Code)
+	}
+
+	// 2. First user automatically becomes admin; second user becomes normal user
+	aliceCookie, alice, aliceSess := registerTestUser(t, mux, "alice", "pass1234")
+	if alice.Role != RoleAdmin {
+		t.Fatalf("expected first user alice to be admin, got %q", alice.Role)
+	}
+	bobCookie, bob, bobSess := registerTestUser(t, mux, "bob", "pass5678")
+	if bob.Role != RoleUser {
+		t.Fatalf("expected second user bob to be user, got %q", bob.Role)
+	}
+
+	// 3. Normal user cannot access /api/admin/users
+	bobAdminReq := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+	bobAdminReq.AddCookie(bobCookie)
+	bobAdminRec := httptest.NewRecorder()
+	mux.ServeHTTP(bobAdminRec, bobAdminReq)
+	if bobAdminRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for normal user on admin API, got %d", bobAdminRec.Code)
+	}
+
+	// 4. Admin can list users, but cannot revoke sole admin
+	aliceListReq := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
+	aliceListReq.AddCookie(aliceCookie)
+	aliceListRec := httptest.NewRecorder()
+	mux.ServeHTTP(aliceListRec, aliceListReq)
+	if aliceListRec.Code != http.StatusOK || !strings.Contains(aliceListRec.Body.String(), `"bob"`) {
+		t.Fatalf("admin list users failed: %d %s", aliceListRec.Code, aliceListRec.Body.String())
+	}
+
+	revokeSelfReq := httptest.NewRequest(http.MethodPost, "/api/admin/users/1/role", strings.NewReader(`{"role":"user"}`))
+	revokeSelfReq.AddCookie(aliceCookie)
+	revokeSelfRec := httptest.NewRecorder()
+	mux.ServeHTTP(revokeSelfRec, revokeSelfReq)
+	if revokeSelfRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 revoking sole admin, got %d", revokeSelfRec.Code)
+	}
+
+	// 5. Logout without revoke keeps quick-login session valid; quick-login restores cookie
+	logoutSwitchReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(`{"revoke":false}`))
+	logoutSwitchReq.AddCookie(aliceCookie)
+	logoutSwitchRec := httptest.NewRecorder()
+	mux.ServeHTTP(logoutSwitchRec, logoutSwitchReq)
+	if logoutSwitchRec.Code != http.StatusOK {
+		t.Fatalf("logout failed: %d", logoutSwitchRec.Code)
+	}
+
+	quickReq := httptest.NewRequest(http.MethodPost, "/api/auth/quick-login", strings.NewReader(`{"session_token":"`+aliceSess+`"}`))
+	quickRec := httptest.NewRecorder()
+	mux.ServeHTTP(quickRec, quickReq)
+	if quickRec.Code != http.StatusOK || !strings.Contains(quickRec.Body.String(), `"alice"`) {
+		t.Fatalf("quick-login failed: %d %s", quickRec.Code, quickRec.Body.String())
+	}
+
+	// Logout with revoke invalidates the saved session token
+	revokeSessReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(`{"session_token":"`+bobSess+`","revoke":true}`))
+	revokeSessRec := httptest.NewRecorder()
+	mux.ServeHTTP(revokeSessRec, revokeSessReq)
+
+	quickBobReq := httptest.NewRequest(http.MethodPost, "/api/auth/quick-login", strings.NewReader(`{"session_token":"`+bobSess+`"}`))
+	quickBobRec := httptest.NewRecorder()
+	mux.ServeHTTP(quickBobRec, quickBobReq)
+	if quickBobRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 after revoked session, got %d", quickBobRec.Code)
+	}
+	_ = store.Close()
+
+	// 6. CLI manual admin grant, user list, revoke, and reset-password
+	var out bytes.Buffer
+	if err := runCLI([]string{"admin", "grant", "bob"}, dbPath, &out); err != nil {
+		t.Fatalf("CLI admin grant bob failed: %v", err)
+	}
+	out.Reset()
+	if err := runCLI([]string{"user", "list"}, dbPath, &out); err != nil {
+		t.Fatalf("CLI user list failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "bob") || !strings.Contains(out.String(), "admin") {
+		t.Fatalf("unexpected CLI user list output:\n%s", out.String())
+	}
+	out.Reset()
+	if err := runCLI([]string{"admin", "revoke", "bob"}, dbPath, &out); err != nil {
+		t.Fatalf("CLI admin revoke bob failed: %v", err)
+	}
+	if err := runCLI([]string{"user", "reset-password", "bob", "newpass999"}, dbPath, &out); err != nil {
+		t.Fatalf("CLI reset-password failed: %v", err)
+	}
+
+	reopened, err := OpenStore(dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer reopened.Close()
+	authedBob, err := reopened.AuthenticateUser("bob", "newpass999")
+	if err != nil || authedBob.Role != RoleUser {
+		t.Fatalf("expected bob with new password and user role, got %+v err=%v", authedBob, err)
+	}
+}
+
+func TestListPaginationDefaultsAndCaps(t *testing.T) {
+	var seenQueries []string
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		seenQueries = append(seenQueries, req.URL.RawQuery)
+		items := make([]map[string]any, 35)
+		for i := range items {
+			items[i] = map[string]any{"id": i + 1}
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{"data": items})
+	}))
+	defer tower.Close()
+
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+	acc, err := store.SaveLogin(&UserInfo{ID: "u-page"}, TokenResponse{AccessToken: "tok-p"})
+	if err != nil {
+		t.Fatalf("SaveLogin: %v", err)
+	}
+
+	cfg := testConfig(tower.URL)
+	cfg.Store = store
+	mux := newMux(cfg)
+
+	// 1. Default MCP list call injects page[number]=1&page[size]=20 and caps 35 -> 20 items
+	req1 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1"}}}`))
+	req1.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	rec1 := httptest.NewRecorder()
+	mux.ServeHTTP(rec1, req1)
+	if rec1.Code != http.StatusOK || !strings.Contains(rec1.Body.String(), `"truncated\"`) && !strings.Contains(rec1.Body.String(), `truncated`) {
+		t.Fatalf("expected truncated meta in response: %d %s", rec1.Code, rec1.Body.String())
+	}
+	q1, _ := url.ParseQuery(seenQueries[0])
+	if q1.Get("page[number]") != "1" || q1.Get("page[size]") != "20" {
+		t.Fatalf("expected default page=1 & page[size]=20, got %s", seenQueries[0])
+	}
+
+	// 2. Oversized page_size=500 is clamped to 50
+	req2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1","page":3,"page_size":500}}}`))
+	req2.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req2)
+	q2, _ := url.ParseQuery(seenQueries[1])
+	if q2.Get("page[number]") != "3" || q2.Get("page[size]") != "50" {
+		t.Fatalf("expected clamped page[size]=50, got %s", seenQueries[1])
+	}
+
+	// 3. /api/proxy also clamps page[size]=999 to 50 and defaults empty list queries
+	sess, _, _ := registerTestUser(t, mux, "pager", "pass123")
+	proxyReq := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"method":"GET","path":"/api/v1/projects/p1/topics","query":"page[size]=999","access_token":"tok-p"}`))
+	proxyReq.AddCookie(sess)
+	proxyRec := httptest.NewRecorder()
+	mux.ServeHTTP(proxyRec, proxyReq)
+	q3, _ := url.ParseQuery(seenQueries[2])
+	if q3.Get("page[number]") != "1" || q3.Get("page[size]") != "50" {
+		t.Fatalf("expected proxy clamped query, got %s", seenQueries[2])
+	}
+
+	// 4. Local-sliced list tools (like tower_list_projects) honor explicit page=2 & page_size=10
+	req4 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tower_list_projects","arguments":{"team_id":"t1","page":2,"page_size":10}}}`))
+	req4.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	rec4 := httptest.NewRecorder()
+	mux.ServeHTTP(rec4, req4)
+	body4 := rec4.Body.String()
+	if rec4.Code != http.StatusOK || !strings.Contains(body4, `\"id\": 11`) || strings.Contains(body4, `\"id\": 1,`) || strings.Contains(body4, `\"id\": 21`) {
+		t.Fatalf("expected page 2 items 11..20, got: %s", body4)
+	}
+}
+
+func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
+	var towerServerURL string
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		switch {
+		case req.Method == http.MethodDelete && req.URL.Path == "/api/v1/todos/t1/completion":
+			writeJSON(writer, http.StatusOK, map[string]any{"reopened": true})
+		case req.Method == http.MethodDelete && req.URL.Path == "/api/v1/todos/t1":
+			writeJSON(writer, http.StatusNoContent, nil)
+		case req.Method == http.MethodGet && req.URL.Path == "/api/v1/teams":
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"data": []map[string]any{
+					{"id": "team-1", "type": "teams", "attributes": map[string]any{"name": "CoreTeam"}},
+				},
+			})
+		case req.Method == http.MethodGet && req.URL.Path == "/api/v1/teams/team-1/member":
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"data": map[string]any{"id": "mem-1", "type": "members", "attributes": map[string]any{"nickname": "Alice"}},
+			})
+		case req.Method == http.MethodGet && req.URL.Path == "/api/v1/members/mem-1/assigned_uncompleted_todos":
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"data": []map[string]any{
+					{"id": "todo-a1", "type": "todos", "attributes": map[string]any{"content": "Fix bug"}},
+				},
+			})
+		case req.Method == http.MethodPost && req.URL.Path == "/api/v1/teams/team-1/direct_uploads":
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"guid": "guid-oss-1",
+				"directUpload": map[string]string{
+					"url":            towerServerURL + "/mock-oss",
+					"OSSAccessKeyId": "ak-1",
+					"policy":         "pol-1",
+					"Signature":      "sig-1",
+					"callback":       "cb-1",
+					"key":            "641/guid-oss-1",
+				},
+			})
+		case req.Method == http.MethodPost && req.URL.Path == "/mock-oss":
+			if !strings.HasPrefix(req.Header.Get("Content-Type"), "multipart/form-data") {
+				http.Error(writer, "expected multipart", http.StatusBadRequest)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"oss": "ok"})
+		case req.Method == http.MethodPost && req.URL.Path == "/api/v1/projects/proj-1/uploads":
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"data": map[string]any{"id": "up-1", "type": "uploads", "attributes": map[string]any{"name": "note.md"}},
+			})
+		default:
+			http.NotFound(writer, req)
+		}
+	}))
+	defer tower.Close()
+	towerServerURL = tower.URL
+
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatalf("OpenStore: %v", err)
+	}
+	defer store.Close()
+	acc, err := store.SaveLogin(&UserInfo{ID: "u-sec"}, TokenResponse{AccessToken: "tok-sec"})
+	if err != nil {
+		t.Fatalf("SaveLogin: %v", err)
+	}
+
+	cfg := testConfig(tower.URL)
+	cfg.Store = store
+	mux := newMux(cfg)
+
+	// 1. SKILL.md endpoint renders dynamic host /mcp URL
+	skillReq := httptest.NewRequest(http.MethodGet, "http://tower.example.lan:8888/api/skill.md?download=1", nil)
+	skillRec := httptest.NewRecorder()
+	mux.ServeHTTP(skillRec, skillReq)
+	if skillRec.Code != http.StatusOK || !strings.Contains(skillRec.Body.String(), "http://tower.example.lan:8888/mcp") {
+		t.Fatalf("skill.md failed: %d %s", skillRec.Code, skillRec.Body.String())
+	}
+
+	// 2. Register first user (admin)
+	adminCookie, _, _ := registerTestUser(t, mux, "admin1", "pass123")
+
+	// 3. Default MCP hard-delete protection blocks tower_delete_todo, but allows tower_reopen_todo
+	delReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_delete_todo","arguments":{"todo_id":"t1"}}}`))
+	delReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	delRec := httptest.NewRecorder()
+	mux.ServeHTTP(delRec, delReq)
+	if !strings.Contains(delRec.Body.String(), "硬删除保护") || !strings.Contains(delRec.Body.String(), `"isError":true`) {
+		t.Fatalf("expected hard delete blocked by default, got: %s", delRec.Body.String())
+	}
+
+	reopenReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_reopen_todo","arguments":{"todo_id":"t1"}}}`))
+	reopenReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	reopenRec := httptest.NewRecorder()
+	mux.ServeHTTP(reopenRec, reopenReq)
+	if !strings.Contains(reopenRec.Body.String(), "reopened") || strings.Contains(reopenRec.Body.String(), `"isError":true`) {
+		t.Fatalf("expected reopen_todo allowed, got: %s", reopenRec.Body.String())
+	}
+
+	// 4. Admin updates settings: registration_mode=invite, invite_code=TEAM88, allow_mcp_delete=true
+	setReq := httptest.NewRequest(http.MethodPost, "/api/admin/settings", strings.NewReader(`{"registration_mode":"invite","invite_code":"TEAM88","allow_mcp_delete":true}`))
+	setReq.AddCookie(adminCookie)
+	setRec := httptest.NewRecorder()
+	mux.ServeHTTP(setRec, setReq)
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("update settings failed: %d %s", setRec.Code, setRec.Body.String())
+	}
+
+	// Hard delete now succeeds
+	delRec2 := httptest.NewRecorder()
+	delReq2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tower_delete_todo","arguments":{"todo_id":"t1"}}}`))
+	delReq2.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	mux.ServeHTTP(delRec2, delReq2)
+	if strings.Contains(delRec2.Body.String(), `"isError":true`) {
+		t.Fatalf("expected hard delete allowed after setting enabled, got: %s", delRec2.Body.String())
+	}
+
+	// 5. Invite code enforcement
+	badReg := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"bob","password":"password123"}`))
+	badRegRec := httptest.NewRecorder()
+	mux.ServeHTTP(badRegRec, badReg)
+	if badRegRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without invite code, got %d", badRegRec.Code)
+	}
+	goodReg := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(`{"username":"bob","password":"password123","invite_code":"TEAM88"}`))
+	goodRegRec := httptest.NewRecorder()
+	mux.ServeHTTP(goodRegRec, goodReg)
+	if goodRegRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid invite code, got %d: %s", goodRegRec.Code, goodRegRec.Body.String())
+	}
+	var bobCookie *http.Cookie
+	for _, c := range goodRegRec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			bobCookie = c
+		}
+	}
+
+	// 6. Self password change & logout-all
+	pwReq := httptest.NewRequest(http.MethodPost, "/api/auth/password", strings.NewReader(`{"current_password":"password123","new_password":"newpassword456"}`))
+	pwReq.AddCookie(bobCookie)
+	pwRec := httptest.NewRecorder()
+	mux.ServeHTTP(pwRec, pwReq)
+	if pwRec.Code != http.StatusOK {
+		t.Fatalf("self password change failed: %d %s", pwRec.Code, pwRec.Body.String())
+	}
+
+	// 7. Login rate limiting (8 failed attempts -> 401, 9th -> 429)
+	for i := 1; i <= 8; i++ {
+		failReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"bob","password":"wrong"}`))
+		failReq.RemoteAddr = "10.0.0.9:12345"
+		failRec := httptest.NewRecorder()
+		mux.ServeHTTP(failRec, failReq)
+		if failRec.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d expected 401, got %d", i, failRec.Code)
+		}
+	}
+	rateReq := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"bob","password":"newpassword456"}`))
+	rateReq.RemoteAddr = "10.0.0.9:12345"
+	rateRec := httptest.NewRecorder()
+	mux.ServeHTTP(rateRec, rateReq)
+	if rateRec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 on 9th attempt, got %d", rateRec.Code)
+	}
+
+	// 8. Composite MCP tools: tower_my_todo_overview & tower_upload_file
+	ovReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"tower_my_todo_overview","arguments":{}}}`))
+	ovReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	ovRec := httptest.NewRecorder()
+	mux.ServeHTTP(ovRec, ovReq)
+	if ovRec.Code != http.StatusOK || !strings.Contains(ovRec.Body.String(), "todo-a1") || !strings.Contains(ovRec.Body.String(), "CoreTeam") {
+		t.Fatalf("tower_my_todo_overview failed: %d %s", ovRec.Code, ovRec.Body.String())
+	}
+
+	upReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"tower_upload_file","arguments":{"team_id":"team-1","project_id":"proj-1","filename":"note.md","content":"# Hello Tower"}}}`))
+	upReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	upRec := httptest.NewRecorder()
+	mux.ServeHTTP(upRec, upReq)
+	if upRec.Code != http.StatusOK || !strings.Contains(upRec.Body.String(), "guid-oss-1") || !strings.Contains(upRec.Body.String(), "up-1") {
+		t.Fatalf("tower_upload_file failed: %d %s", upRec.Code, upRec.Body.String())
 	}
 }

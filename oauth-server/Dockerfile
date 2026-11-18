@@ -6,17 +6,20 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
-COPY go.mod ./
-COPY main.go ./
+COPY go.mod go.sum ./
+RUN go mod download
+COPY *.go SKILL.md ./
 COPY --from=web-builder /app/web/dist ./web/dist
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /tower-oauth .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /agents-tower .
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=go-builder /tower-oauth /app/tower-oauth
+COPY --from=go-builder /agents-tower /app/agents-tower
 ENV LISTEN_ADDR=[::]:8888
+ENV DB_PATH=/app/data/agents-tower.db
+VOLUME ["/app/data"]
 EXPOSE 8888
-CMD ["/app/tower-oauth"]
+CMD ["/app/agents-tower"]

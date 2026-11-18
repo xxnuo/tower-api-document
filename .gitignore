@@ -2,5 +2,6 @@
 oauth-server/.env
 oauth-server/.tmp
 oauth-server/bin
+oauth-server/data
 oauth-server/web/dist
 oauth-server/web/node_modules

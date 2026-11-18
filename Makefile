@@ -9,8 +9,8 @@ build-web:
 	cd oauth-server/web && pnpm build
 
 build: build-web
-	cd oauth-server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/tower-oauth .
-	@if command -v upx >/dev/null 2>&1; then upx --best --lzma -q oauth-server/bin/tower-oauth; fi
+	cd oauth-server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/agents-tower .
+	@if command -v upx >/dev/null 2>&1; then upx --best --lzma -q oauth-server/bin/agents-tower; fi
 
 run: build-web
 	cd oauth-server && go run .

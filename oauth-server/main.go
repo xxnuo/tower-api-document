@@ -28,6 +28,9 @@ const (
 //go:embed all:web/dist
 var webDistFS embed.FS
 
+//go:embed SKILL.md
+var embeddedSkillMD string
+
 type pendingEntry struct {
 	Payload   any
 	ExpiresAt time.Time
@@ -44,8 +47,10 @@ type Config struct {
 	RedirectURI  string
 	BaseURL      string
 	ListenAddr   string
+	DBPath       string
 	DevProxyURL  string
 	HTTPClient   *http.Client
+	Store        *Store
 }
 
 type TokenResponse struct {
@@ -67,8 +72,10 @@ type UserInfo struct {
 }
 
 type LoginResult struct {
-	User  *UserInfo     `json:"user,omitempty"`
-	Token TokenResponse `json:"token"`
+	AccountID string        `json:"account_id,omitempty"`
+	User      *UserInfo     `json:"user,omitempty"`
+	Token     TokenResponse `json:"token"`
+	MCPAPIKey string        `json:"mcp_api_key,omitempty"`
 }
 
 func loadDotEnv(path string) {
@@ -103,6 +110,7 @@ func loadConfigFromEnv() (Config, error) {
 		RedirectURI:  strings.TrimSpace(os.Getenv("TOWER_REDIRECT_URI")),
 		BaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("TOWER_BASE_URL")), "/"),
 		ListenAddr:   strings.TrimSpace(os.Getenv("LISTEN_ADDR")),
+		DBPath:       strings.TrimSpace(os.Getenv("DB_PATH")),
 		DevProxyURL:  strings.TrimRight(strings.TrimSpace(os.Getenv("VITE_DEV_URL")), "/"),
 		HTTPClient:   &http.Client{Timeout: 15 * time.Second},
 	}
@@ -114,6 +122,9 @@ func loadConfigFromEnv() (Config, error) {
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "[::]:8888"
+	}
+	if cfg.DBPath == "" {
+		cfg.DBPath = "data/agents-tower.db"
 	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return cfg, errors.New("TOWER_CLIENT_ID and TOWER_CLIENT_SECRET are required")
@@ -133,24 +144,81 @@ func newMux(cfg Config) http.Handler {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 15 * time.Second}
 	}
+	if cfg.Store == nil {
+		memStore, err := OpenStore(":memory:")
+		if err != nil {
+			log.Fatal(err)
+		}
+		cfg.Store = memStore
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
-		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower"})
 	})
 	mux.HandleFunc("GET /api/config", func(writer http.ResponseWriter, req *http.Request) {
+		settings := cfg.Store.GetSettings()
 		writeJSON(writer, http.StatusOK, map[string]any{
-			"is_oob":       isOOB(cfg),
-			"redirect_uri": cfg.RedirectURI,
+			"service":           "AgentsTower",
+			"is_oob":            isOOB(cfg),
+			"redirect_uri":      cfg.RedirectURI,
+			"mcp_tools":         totalMCPToolCount(),
+			"registration_mode": settings.RegistrationMode,
+			"allow_mcp_delete":  settings.AllowMCPDelete,
 		})
 	})
-	mux.HandleFunc("GET /api/auth/result", handlePendingResult())
-	mux.HandleFunc("POST /api/verify", handleVerify(cfg))
-	mux.HandleFunc("POST /api/proxy", handleAPIProxy(cfg))
-	mux.HandleFunc("GET /login", handleLogin(cfg))
-	mux.HandleFunc("GET /oauth2/callback", handleCallback(cfg))
-	mux.HandleFunc("POST /oauth2/code", handleManualCode(cfg))
-	mux.HandleFunc("POST /oauth2/otp", handleOTP(cfg))
-	mux.HandleFunc("POST /oauth2/refresh", handleRefresh(cfg))
+	mux.HandleFunc("GET /api/skill.md", func(writer http.ResponseWriter, req *http.Request) {
+		scheme := "http"
+		if req.TLS != nil || strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
+			scheme = "https"
+		}
+		host := strings.TrimSpace(req.Host)
+		if host == "" {
+			host = "localhost:8888"
+		}
+		mcpURL := scheme + "://" + host + "/mcp"
+		content := strings.ReplaceAll(embeddedSkillMD, "{{MCP_URL}}", mcpURL)
+		writer.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		if req.URL.Query().Get("download") == "1" {
+			writer.Header().Set("Content-Disposition", `attachment; filename="SKILL.md"`)
+		}
+		_, _ = io.WriteString(writer, content)
+	})
+	mux.HandleFunc("GET /api/auth/me", handleAuthMe(cfg))
+	mux.HandleFunc("POST /api/auth/register", handleRegister(cfg))
+	mux.HandleFunc("POST /api/auth/login", handleAuthLogin(cfg))
+	mux.HandleFunc("POST /api/auth/quick-login", handleQuickLogin(cfg))
+	mux.HandleFunc("POST /api/auth/logout", handleAuthLogout(cfg))
+	mux.HandleFunc("POST /api/auth/password", requireAuth(cfg, handleChangePassword(cfg)))
+	mux.HandleFunc("POST /api/auth/logout-all", requireAuth(cfg, handleLogoutAll(cfg)))
+
+	mux.HandleFunc("GET /api/auth/result", requireAuth(cfg, handlePendingResult()))
+	mux.HandleFunc("GET /api/accounts", requireAuth(cfg, func(writer http.ResponseWriter, req *http.Request) {
+		u := userFromContext(req.Context())
+		writeJSON(writer, http.StatusOK, map[string]any{"accounts": userLoginResults(cfg, u.ID)})
+	}))
+	mux.HandleFunc("POST /api/accounts/sync", requireAuth(cfg, handleSyncAccount(cfg)))
+	mux.HandleFunc("POST /api/mcp-key/rotate", requireAuth(cfg, handleRotateMCPKey(cfg)))
+	mux.HandleFunc("DELETE /api/account", requireAuth(cfg, handleDeleteAccount(cfg)))
+	mux.HandleFunc("POST /api/verify", requireAuth(cfg, handleVerify(cfg)))
+	mux.HandleFunc("POST /api/proxy", requireAuth(cfg, handleAPIProxy(cfg)))
+
+	mux.HandleFunc("GET /api/admin/users", requireAdmin(cfg, handleAdminListUsers(cfg)))
+	mux.HandleFunc("POST /api/admin/users/{id}/role", requireAdmin(cfg, handleAdminSetRole(cfg)))
+	mux.HandleFunc("POST /api/admin/users/{id}/password", requireAdmin(cfg, handleAdminResetPassword(cfg)))
+	mux.HandleFunc("DELETE /api/admin/users/{id}", requireAdmin(cfg, handleAdminDeleteUser(cfg)))
+	mux.HandleFunc("GET /api/admin/settings", requireAdmin(cfg, handleAdminGetSettings(cfg)))
+	mux.HandleFunc("POST /api/admin/settings", requireAdmin(cfg, handleAdminUpdateSettings(cfg)))
+
+	mcpHandler := handleMCP(cfg)
+	mux.HandleFunc("POST /mcp", mcpHandler)
+	mux.HandleFunc("GET /mcp", mcpHandler)
+	mux.HandleFunc("DELETE /mcp", mcpHandler)
+	mux.HandleFunc("OPTIONS /mcp", mcpHandler)
+	mux.HandleFunc("GET /login", requireAuth(cfg, handleLogin(cfg)))
+	mux.HandleFunc("GET /oauth2/callback", requireAuth(cfg, handleCallback(cfg)))
+	mux.HandleFunc("POST /oauth2/code", requireAuth(cfg, handleManualCode(cfg)))
+	mux.HandleFunc("POST /oauth2/otp", requireAuth(cfg, handleOTP(cfg)))
+	mux.HandleFunc("POST /oauth2/refresh", requireAuth(cfg, handleRefresh(cfg)))
 
 	if cfg.DevProxyURL != "" {
 		target, parseErr := url.Parse(cfg.DevProxyURL)
@@ -338,6 +406,17 @@ func finishCodeExchange(cfg Config, writer http.ResponseWriter, req *http.Reques
 	if user, userErr := fetchUser(cfg, tokenResp.AccessToken); userErr == nil {
 		result.User = user
 	}
+	if cfg.Store != nil {
+		var ownerID int64
+		if authUser := userFromContext(req.Context()); authUser != nil {
+			ownerID = authUser.ID
+		}
+		if stored, storeErr := cfg.Store.SaveLoginForUser(ownerID, result.User, tokenResp); storeErr == nil {
+			result = stored.ToLoginResult()
+		} else {
+			log.Printf("failed to save account to sqlite: %v", storeErr)
+		}
+	}
 	respondAuthOutcome(writer, req, http.StatusOK, result)
 }
 
@@ -398,6 +477,16 @@ func handlePendingResult() http.HandlerFunc {
 	}
 }
 
+func refreshTokenForm(cfg Config, refreshToken string) url.Values {
+	form := url.Values{}
+	form.Set("client_id", cfg.ClientID)
+	form.Set("client_secret", cfg.ClientSecret)
+	form.Set("grant_type", "refresh_token")
+	form.Set("redirect_uri", cfg.RedirectURI)
+	form.Set("refresh_token", refreshToken)
+	return form
+}
+
 func handleRefresh(cfg Config) http.HandlerFunc {
 	return func(writer http.ResponseWriter, req *http.Request) {
 		var payload struct {
@@ -418,19 +507,123 @@ func handleRefresh(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "refresh_token is required"})
 			return
 		}
-		form := url.Values{}
-		form.Set("client_id", cfg.ClientID)
-		form.Set("client_secret", cfg.ClientSecret)
-		form.Set("grant_type", "refresh_token")
-		form.Set("redirect_uri", cfg.RedirectURI)
-		form.Set("refresh_token", payload.RefreshToken)
+		form := refreshTokenForm(cfg, payload.RefreshToken)
 
 		tokenResp, err := postToken(cfg, form, payload.AccessToken)
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
+		if cfg.Store != nil && tokenResp.AccessToken != "" {
+			if _, updErr := cfg.Store.UpdateTokensByRefresh(payload.RefreshToken, tokenResp); updErr != nil {
+				if existing, getErr := cfg.Store.GetByAccessToken(payload.AccessToken); getErr == nil {
+					_, _ = cfg.Store.UpdateTokens(existing.ID, tokenResp)
+				}
+			}
+		}
 		writeJSON(writer, http.StatusOK, tokenResp)
+	}
+}
+
+func handleSyncAccount(cfg Config) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		authUser := userFromContext(req.Context())
+		var ownerID int64
+		if authUser != nil {
+			ownerID = authUser.ID
+		}
+		var payload struct {
+			Token        TokenResponse `json:"token"`
+			AccessToken  string        `json:"access_token"`
+			RefreshToken string        `json:"refresh_token"`
+		}
+		if err := json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
+			return
+		}
+		tok := payload.Token
+		if tok.AccessToken == "" {
+			tok.AccessToken = strings.TrimSpace(payload.AccessToken)
+		}
+		if tok.RefreshToken == "" {
+			tok.RefreshToken = strings.TrimSpace(payload.RefreshToken)
+		}
+		if tok.AccessToken == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "access_token 不能为空"})
+			return
+		}
+		user, err := fetchUser(cfg, tok.AccessToken)
+		if err != nil {
+			writeJSON(writer, http.StatusUnauthorized, map[string]any{"error": "Tower Access Token 无效或已过期: " + err.Error()})
+			return
+		}
+		stored, err := cfg.Store.SaveLoginForUser(ownerID, user, tok)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "保存凭据失败: " + err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, stored.ToLoginResult())
+	}
+}
+
+func extractCredentialFromReq(req *http.Request) string {
+	if headerKey := extractMCPKey(req); headerKey != "" {
+		return headerKey
+	}
+	var payload struct {
+		Credential  string `json:"credential"`
+		MCPAPIKey   string `json:"mcp_api_key"`
+		AccessToken string `json:"access_token"`
+	}
+	_ = json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&payload)
+	for _, candidate := range []string{payload.Credential, payload.MCPAPIKey, payload.AccessToken} {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func handleRotateMCPKey(cfg Config) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		var ownerID int64
+		if authUser := userFromContext(req.Context()); authUser != nil {
+			ownerID = authUser.ID
+		}
+		cred := extractCredentialFromReq(req)
+		if cred == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "缺少凭据参数"})
+			return
+		}
+		updated, err := cfg.Store.RotateMCPKeyForUser(ownerID, cred)
+		if errors.Is(err, ErrAccountNotFound) {
+			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "未找到对应服务端账号，请先同步或重新登录"})
+			return
+		}
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "重置密钥失败: " + err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"mcp_api_key": updated.MCPAPIKey})
+	}
+}
+
+func handleDeleteAccount(cfg Config) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		var ownerID int64
+		if authUser := userFromContext(req.Context()); authUser != nil {
+			ownerID = authUser.ID
+		}
+		cred := extractCredentialFromReq(req)
+		if cred == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "缺少凭据参数"})
+			return
+		}
+		if err := cfg.Store.DeleteByAuthForUser(ownerID, cred); err != nil && !errors.Is(err, ErrAccountNotFound) {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "删除服务端凭据失败: " + err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"deleted": true})
 	}
 }
 
@@ -447,6 +640,11 @@ func handleVerify(cfg Config) http.HandlerFunc {
 		if token == "" {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"valid": false, "error": "access_token 不能为空"})
 			return
+		}
+		if strings.HasPrefix(token, "at_sk-") && cfg.Store != nil {
+			if acc, err := cfg.Store.EnsureFreshToken(cfg, token, false); err == nil {
+				token = acc.AccessToken
+			}
 		}
 		user, err := fetchUser(cfg, token)
 		if err != nil {
@@ -487,10 +685,17 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "access_token 不能为空"})
 			return
 		}
+		if strings.HasPrefix(token, "at_sk-") && cfg.Store != nil {
+			if acc, err := cfg.Store.EnsureFreshToken(cfg, token, false); err == nil {
+				token = acc.AccessToken
+			}
+		}
 
+		rawQuery := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?")
+		normalizedQuery, maxItems := normalizeListQuery(method, apiPath, rawQuery)
 		targetURL := cfg.BaseURL + apiPath
-		if q := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?"); q != "" {
-			targetURL += "?" + q
+		if normalizedQuery != "" {
+			targetURL += "?" + normalizedQuery
 		}
 
 		var bodyReader io.Reader
@@ -502,14 +707,9 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效请求地址: " + err.Error()})
 			return
 		}
-		if method == http.MethodDelete {
-			// These two DELETE endpoints remove task state rather than a Tower resource.
-			todoPath, isTodo := strings.CutPrefix(outReq.URL.Path, "/api/v1/todos/")
-			id, action, _ := strings.Cut(todoPath, "/")
-			if !isTodo || id == "" || id == "." || id == ".." || (action != "completion" && action != "assignment") {
-				writeJSON(writer, http.StatusForbidden, map[string]any{"error": "此删除接口仅供查看，调试工具已禁用请求发送"})
-				return
-			}
+		if method == http.MethodDelete && !isSafeTodoStateDelete(outReq.URL.Path) {
+			writeJSON(writer, http.StatusForbidden, map[string]any{"error": "此删除接口仅供查看，调试工具已禁用请求发送"})
+			return
 		}
 		outReq.Header.Set("Authorization", "Bearer "+token)
 		outReq.Header.Set("Accept", "application/json")
@@ -526,10 +726,13 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 		}
 		defer resp.Body.Close()
 
-		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "读取响应失败: " + err.Error()})
 			return
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 && maxItems > 0 {
+			respBytes = capJSONListBytes(respBytes, 1, maxItems, false)
 		}
 
 		var parsed any
@@ -612,11 +815,30 @@ func writeJSON(writer http.ResponseWriter, status int, val any) {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		loadDotEnv(".env")
+		dbPath := strings.TrimSpace(os.Getenv("DB_PATH"))
+		if dbPath == "" {
+			dbPath = "data/agents-tower.db"
+		}
+		if err := runCLI(os.Args[1:], dbPath, os.Stdout); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	cfg, err := loadConfigFromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Tower OAuth server listening on %s (redirect_uri=%s)", cfg.ListenAddr, cfg.RedirectURI)
+	store, err := OpenStore(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("open sqlite store (%s): %v", cfg.DBPath, err)
+	}
+	defer store.Close()
+	cfg.Store = store
+
+	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, db=%s)", cfg.ListenAddr, cfg.RedirectURI, cfg.DBPath)
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           newMux(cfg),

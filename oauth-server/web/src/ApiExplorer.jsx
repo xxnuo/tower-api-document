@@ -13,6 +13,30 @@ function extractPathParams(path) {
   return [...path.matchAll(/\{([^}]+)\}/g)].map((m) => m[1]);
 }
 
+function defaultQueryForEndpoint(item) {
+  if (item.method !== "GET") return "";
+  for (const suffix of [
+    "/members",
+    "/assigned_todos",
+    "/assigned_uncompleted_todos",
+    "/assigned_completed_todos",
+    "/created_todos",
+    "/created_uncompleted_todos",
+    "/created_completed_todos",
+    "/todos",
+    "/comments",
+    "/topics",
+    "/uploads",
+    "/time_logs",
+    "/notifications",
+  ]) {
+    if (item.path.endsWith(suffix)) {
+      return "page[number]=1&page[size]=20";
+    }
+  }
+  return "";
+}
+
 function resolveOptionKey(path, paramName) {
   if (paramName !== "id") return paramName;
   if (path.startsWith("/api/v1/teams/")) return "team_id";
@@ -24,7 +48,7 @@ function resolveOptionKey(path, paramName) {
   return "id";
 }
 
-function toOptions(body) {
+export function toOptions(body) {
   const list = Array.isArray(body)
     ? body
     : Array.isArray(body?.data)
@@ -52,7 +76,7 @@ function toOptions(body) {
     .filter(Boolean);
 }
 
-function HighlightedJSON({ text }) {
+export function HighlightedJSON({ text }) {
   const tokens = [];
   const pattern =
     /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g;
@@ -108,6 +132,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
     () => TOWER_API_CATALOG.find((item) => item.id === selectedId) || TOWER_API_CATALOG[0],
     [selectedId]
   );
+  const readOnly = endpoint.method === "DELETE" && endpoint.id !== "todos-reopen" && endpoint.id !== "todos-unassign";
 
   const groupedCatalog = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -149,7 +174,6 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
     },
     [endpoint.path, pathParams]
   );
-  const readOnly = endpoint.method === "DELETE" && endpoint.id !== "todos-reopen" && endpoint.id !== "todos-unassign";
 
   const resolvedPath = useMemo(() => {
     let p = endpoint.path;
@@ -198,7 +222,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
           body: JSON.stringify({
             method: "GET",
             path: apiPath,
-            query: "",
+            query: apiPath === "/api/v1/teams" ? "" : "page[number]=1&page[size]=50",
             body: "",
             access_token: effectiveToken,
           }),
@@ -237,7 +261,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   function selectEndpoint(item) {
     setSelectedId(item.id);
     setBody(item.defaultBody || "");
-    setQuery("");
+    setQuery(defaultQueryForEndpoint(item));
     setError("");
     setResponse(null);
     setConfirmDanger(false);
@@ -551,12 +575,14 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
         )}
 
         <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Query 参数（可选）</label>
+          <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            Query 参数（可选，列表接口默认限制每页 20 条、最大 50 条）
+          </label>
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="例如: page=1&per_page=20"
+            placeholder="例如: page[number]=1&page[size]=20"
             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-mono text-xs outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           />
         </div>

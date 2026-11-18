@@ -136,7 +136,7 @@ export const TOWER_API_CATALOG = [
     name: "指派任务负责人",
     method: "PATCH",
     path: "/api/v1/todos/{todo_id}/assignment",
-    defaultBody: '{\n  "assignee_id": ""\n}',
+    defaultBody: '{\n  "todos_assignment": {\n    "assignee_id": ""\n  }\n}',
   },
   { id: "todos-unassign", group: "任务", name: "移除任务负责人", method: "DELETE", path: "/api/v1/todos/{todo_id}/assignment" },
   {
@@ -145,7 +145,7 @@ export const TOWER_API_CATALOG = [
     name: "更新任务到期日",
     method: "PATCH",
     path: "/api/v1/todos/{todo_id}/due",
-    defaultBody: '{\n  "due_at": "2026-12-31"\n}',
+    defaultBody: '{\n  "todos_due": {\n    "due_at": "2026-12-31"\n  }\n}',
   },
   {
     id: "todos-desc",
@@ -153,7 +153,7 @@ export const TOWER_API_CATALOG = [
     name: "更新任务描述",
     method: "PATCH",
     path: "/api/v1/todos/{todo_id}/desc",
-    defaultBody: '{\n  "desc": "任务详细描述"\n}',
+    defaultBody: '{\n  "todos_desc": {\n    "desc": "任务详细描述"\n  }\n}',
   },
   { id: "todos-cc-list", group: "任务", name: "查询任务通知成员", method: "GET", path: "/api/v1/todos/{todo_id}/cc_members" },
   {
@@ -162,7 +162,7 @@ export const TOWER_API_CATALOG = [
     name: "更新任务通知成员",
     method: "PATCH",
     path: "/api/v1/todos/{todo_id}/cc_members",
-    defaultBody: '{\n  "cc_member_ids": []\n}',
+    defaultBody: '{\n  "guids": []\n}',
   },
 
   // 讨论
@@ -205,7 +205,7 @@ export const TOWER_API_CATALOG = [
     name: "获取客户端直传签名",
     method: "POST",
     path: "/api/v1/teams/{team_id}/direct_uploads",
-    defaultBody: '{\n  "blob": {\n    "filename": "example.png",\n    "byte_size": 1024,\n    "checksum": "",\n    "content_type": "image/png"\n  }\n}',
+    defaultBody: '{\n  "filename": "example.png",\n  "byte_size": 1024,\n  "md5": ""\n}',
   },
 
   // 工时
@@ -217,7 +217,7 @@ export const TOWER_API_CATALOG = [
     name: "添加工时",
     method: "POST",
     path: "/api/v1/todos/{todo_id}/time_logs",
-    defaultBody: '{\n  "time_log": {\n    "hours": 1.5,\n    "desc": "工作记录"\n  }\n}',
+    defaultBody: '{\n  "time_log": {\n    "starts_at": "2026-11-18T14:00",\n    "ends_at": "2026-11-18T16:00",\n    "creator_id": "",\n    "desc": "工作记录"\n  }\n}',
   },
   {
     id: "timelogs-update",
@@ -225,7 +225,7 @@ export const TOWER_API_CATALOG = [
     name: "更新工时信息",
     method: "PATCH",
     path: "/api/v1/time_logs/{time_log_id}",
-    defaultBody: '{\n  "time_log": {\n    "hours": 2,\n    "desc": "更新工作记录"\n  }\n}',
+    defaultBody: '{\n  "time_log": {\n    "starts_at": "2026-11-18T14:00",\n    "ends_at": "2026-11-18T16:00",\n    "creator_id": "",\n    "desc": "更新工作记录"\n  }\n}',
   },
   { id: "timelogs-delete", group: "工时", name: "删除工时", method: "DELETE", path: "/api/v1/time_logs/{time_log_id}" },
 

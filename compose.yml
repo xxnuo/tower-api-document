@@ -1,0 +1,21 @@
+services:
+  agents-tower:
+    build:
+      context: ./oauth-server
+      dockerfile: Dockerfile
+    container_name: agents-tower
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    env_file:
+      - ./oauth-server/.env
+    environment:
+      LISTEN_ADDR: "[::]:8888"
+      DB_PATH: "/app/data/agents-tower.db"
+    volumes:
+      - ./oauth-server/data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8888/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

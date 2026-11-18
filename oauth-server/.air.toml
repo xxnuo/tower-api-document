@@ -2,8 +2,8 @@ root = "."
 tmp_dir = ".tmp"
 
 [build]
-  cmd = "go build -o ./.tmp/tower-oauth ."
-  entrypoint = ["./.tmp/tower-oauth"]
+  cmd = "go build -o ./.tmp/agents-tower ."
+  entrypoint = ["./.tmp/agents-tower"]
   include_ext = ["go"]
-  exclude_dir = ["web", ".tmp", "bin"]
+  exclude_dir = ["web", ".tmp", "bin", "data"]
   delay = 300
