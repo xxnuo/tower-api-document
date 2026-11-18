@@ -129,6 +129,26 @@ GET https://tower.im/api/v1/members/{member_id}
 Status: 200 OK
 ```
 
+## 获取指派给成员的全部任务
+
+```
+GET https://tower.im/api/v1/members/{member_id}/assigned_todos
+```
+
+```
+Status: 200 OK
+```
+
+## 获取成员创建的全部任务
+
+```
+GET https://tower.im/api/v1/members/{member_id}/created_todos
+```
+
+```
+Status: 200 OK
+```
+
 ## 获取指派给成员未完成任务
 
 ```

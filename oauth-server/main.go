@@ -134,6 +134,9 @@ func newMux(cfg Config) http.Handler {
 		cfg.HTTPClient = &http.Client{Timeout: 15 * time.Second}
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
+		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+	})
 	mux.HandleFunc("GET /api/config", func(writer http.ResponseWriter, req *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]any{
 			"is_oob":       isOOB(cfg),
@@ -142,6 +145,7 @@ func newMux(cfg Config) http.Handler {
 	})
 	mux.HandleFunc("GET /api/auth/result", handlePendingResult())
 	mux.HandleFunc("POST /api/verify", handleVerify(cfg))
+	mux.HandleFunc("POST /api/proxy", handleAPIProxy(cfg))
 	mux.HandleFunc("GET /login", handleLogin(cfg))
 	mux.HandleFunc("GET /oauth2/callback", handleCallback(cfg))
 	mux.HandleFunc("POST /oauth2/code", handleManualCode(cfg))
@@ -246,13 +250,47 @@ func handleManualCode(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效表单"})
 			return
 		}
-		code := strings.TrimSpace(req.FormValue("code"))
+		code := extractCodeInput(req.FormValue("code"))
 		if code == "" {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "code 不能为空"})
 			return
 		}
 		finishCodeExchange(cfg, writer, req, code, "")
 	}
+}
+
+func extractCodeInput(raw string) string {
+	trimmed := strings.Trim(strings.TrimSpace(raw), `"'`)
+	if trimmed == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(trimmed); err == nil {
+		if code := strings.TrimSpace(parsed.Query().Get("code")); code != "" {
+			return code
+		}
+	}
+	if strings.Contains(trimmed, "code=") {
+		if query, err := url.ParseQuery(strings.TrimPrefix(trimmed, "?")); err == nil {
+			if code := strings.TrimSpace(query.Get("code")); code != "" {
+				return code
+			}
+		}
+	}
+	return trimmed
+}
+
+func formatOAuthError(errCode, desc string) string {
+	hints := map[string]string{
+		"invalid_grant":       "授权码或 Refresh Token 无效或已过期，请重新登录",
+		"invalid_client":      "应用 Client ID 或 Client Secret 配置有误",
+		"invalid_request":     "请求参数有误，请检查回调地址与授权码",
+		"unauthorized_client": "当前应用未获得该授权方式权限",
+		"access_denied":       "用户取消了授权",
+	}
+	if hint, ok := hints[errCode]; ok {
+		return hint + " (" + errCode + ")"
+	}
+	return strings.TrimSpace(errCode + " " + desc)
 }
 
 func handleOTP(cfg Config) http.HandlerFunc {
@@ -292,7 +330,7 @@ func finishCodeExchange(cfg Config, writer http.ResponseWriter, req *http.Reques
 		return
 	}
 	if tokenResp.Error != "" {
-		respondAuthOutcome(writer, req, http.StatusBadGateway, map[string]any{"error": strings.TrimSpace(tokenResp.Error + " " + tokenResp.ErrorDescription)})
+		respondAuthOutcome(writer, req, http.StatusBadGateway, map[string]any{"error": formatOAuthError(tokenResp.Error, tokenResp.ErrorDescription)})
 		return
 	}
 
@@ -401,7 +439,7 @@ func handleVerify(cfg Config) http.HandlerFunc {
 		var payload struct {
 			AccessToken string `json:"access_token"`
 		}
-		if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		if err := json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&payload); err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"valid": false, "error": "无效 JSON 请求体"})
 			return
 		}
@@ -416,6 +454,85 @@ func handleVerify(cfg Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{"valid": true, "user": user})
+	}
+}
+
+func handleAPIProxy(cfg Config) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		var payload struct {
+			Method      string `json:"method"`
+			Path        string `json:"path"`
+			Query       string `json:"query"`
+			Body        string `json:"body"`
+			AccessToken string `json:"access_token"`
+		}
+		if err := json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&payload); err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
+			return
+		}
+		method := strings.ToUpper(strings.TrimSpace(payload.Method))
+		switch method {
+		case http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
+		default:
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "不支持的 HTTP 方法"})
+			return
+		}
+		apiPath := strings.TrimSpace(payload.Path)
+		if !strings.HasPrefix(apiPath, "/api/v1/") {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "仅允许代理 /api/v1/ 路径"})
+			return
+		}
+		token := strings.TrimSpace(payload.AccessToken)
+		if token == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "access_token 不能为空"})
+			return
+		}
+
+		targetURL := cfg.BaseURL + apiPath
+		if q := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?"); q != "" {
+			targetURL += "?" + q
+		}
+
+		var bodyReader io.Reader
+		if payload.Body != "" && method != http.MethodGet {
+			bodyReader = strings.NewReader(payload.Body)
+		}
+		outReq, err := http.NewRequestWithContext(req.Context(), method, targetURL, bodyReader)
+		if err != nil {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效请求地址: " + err.Error()})
+			return
+		}
+		outReq.Header.Set("Authorization", "Bearer "+token)
+		outReq.Header.Set("Accept", "application/json")
+		if bodyReader != nil {
+			outReq.Header.Set("Content-Type", "application/json")
+		}
+
+		started := time.Now()
+		resp, err := cfg.HTTPClient.Do(outReq)
+		durationMs := time.Since(started).Milliseconds()
+		if err != nil {
+			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "请求 Tower API 失败: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		if err != nil {
+			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "读取响应失败: " + err.Error()})
+			return
+		}
+
+		var parsed any
+		if json.Unmarshal(respBytes, &parsed) != nil {
+			parsed = string(respBytes)
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"status":      resp.StatusCode,
+			"status_text": resp.Status,
+			"duration_ms": durationMs,
+			"body":        parsed,
+		})
 	}
 }
 
@@ -491,5 +608,10 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("Tower OAuth server listening on %s (redirect_uri=%s)", cfg.ListenAddr, cfg.RedirectURI)
-	log.Fatal(http.ListenAndServe(cfg.ListenAddr, newMux(cfg)))
+	server := &http.Server{
+		Addr:              cfg.ListenAddr,
+		Handler:           newMux(cfg),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	log.Fatal(server.ListenAndServe())
 }

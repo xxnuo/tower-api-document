@@ -147,4 +147,32 @@ Status: 200 OK
 }
 ```
 
+## 获取团队信息
+
+```
+GET https://tower.im/api/v1/teams/{team_id}
+```
+
+```json
+Status: 200 OK
+
+{
+    "data": {
+        "id": "1f9118b07cf4485ba4b97a4cbc50bba8",
+        "type": "teams",
+        "attributes": {
+            "name": "Tower Team",
+            "is_pro": true,
+            "is_trial": false,
+            "remaining_days_for_pro": 341,
+            "created_at": "2018-04-16T16:35:29.000+08:00",
+            "updated_at": "2018-04-16T16:36:56.000+08:00"
+        }
+    },
+    "jsonapi": {
+        "version": "1.0"
+    }
+}
+```
+
 

@@ -289,3 +289,49 @@ func TestVerifyToken(t *testing.T) {
 		t.Fatalf("expected valid=false, got %d %s", badRec.Code, badRec.Body.String())
 	}
 }
+
+func TestHealthzAndCodeExtraction(t *testing.T) {
+	mux := newMux(testConfig("https://tower.im"))
+	req := httptest.NewRequest(http.MethodGet, "/api/healthz", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok"`) {
+		t.Fatalf("unexpected healthz response: %d %s", rec.Code, rec.Body.String())
+	}
+
+	if got := extractCodeInput(`  "http://localhost:8888/oauth2/callback?code=abc123&state=xyz" `); got != "abc123" {
+		t.Fatalf("expected extracted code abc123, got %q", got)
+	}
+	if got := extractCodeInput("code=raw456&state=1"); got != "raw456" {
+		t.Fatalf("expected extracted code raw456, got %q", got)
+	}
+}
+
+func TestAPIProxy(t *testing.T) {
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		if req.URL.Path != "/api/v1/teams" || req.URL.RawQuery != "page=1" {
+			t.Fatalf("unexpected proxied path/query: %s?%s", req.URL.Path, req.URL.RawQuery)
+		}
+		if req.Header.Get("Authorization") != "Bearer tok-1" {
+			t.Fatalf("missing bearer token: %s", req.Header.Get("Authorization"))
+		}
+		_, _ = writer.Write([]byte(`[{"guid":"t1","name":"Team A"}]`))
+	}))
+	defer tower.Close()
+
+	mux := newMux(testConfig(tower.URL))
+
+	okReq := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"method":"GET","path":"/api/v1/teams","query":"page=1","access_token":"tok-1"}`))
+	okRec := httptest.NewRecorder()
+	mux.ServeHTTP(okRec, okReq)
+	if okRec.Code != http.StatusOK || !strings.Contains(okRec.Body.String(), `"Team A"`) {
+		t.Fatalf("unexpected proxy response: %d %s", okRec.Code, okRec.Body.String())
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(`{"method":"GET","path":"/oauth/token","access_token":"tok-1"}`))
+	badRec := httptest.NewRecorder()
+	mux.ServeHTTP(badRec, badReq)
+	if badRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-api path, got %d", badRec.Code)
+	}
+}
