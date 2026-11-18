@@ -307,6 +307,37 @@ func TestHealthzAndCodeExtraction(t *testing.T) {
 	}
 }
 
+func TestAPIProxyDeleteRestrictions(t *testing.T) {
+	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}))
+	defer tower.Close()
+	handler := handleAPIProxy(testConfig(tower.URL))
+
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{"/api/v1/projects/p1", http.StatusForbidden},
+		{"/api/v1/teams/t1/todos/2", http.StatusForbidden},
+		{"/api/v1/todos/1?x=/completion", http.StatusForbidden},
+		{"/api/v1/todos/1/completion", http.StatusOK},
+		{"/api/v1/todos/1/assignment", http.StatusOK},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			body, err := json.Marshal(map[string]string{"method": "DELETE", "path": tc.path, "access_token": "test-token"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/proxy", strings.NewReader(string(body))))
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.want, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestAPIProxy(t *testing.T) {
 	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		if req.URL.Path != "/api/v1/teams" || req.URL.RawQuery != "page=1" {

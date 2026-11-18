@@ -149,6 +149,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
     },
     [endpoint.path, pathParams]
   );
+  const readOnly = endpoint.method === "DELETE" && endpoint.id !== "todos-reopen" && endpoint.id !== "todos-unassign";
 
   const resolvedPath = useMemo(() => {
     let p = endpoint.path;
@@ -243,6 +244,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   }
 
   async function executeSend() {
+    if (readOnly) return;
     if (!effectiveToken) {
       setError("请先登录账号获取 Access Token，或在下方填入临时 Token");
       return;
@@ -428,11 +430,11 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
               )}
             </div>
             <div className="mt-1 break-all font-mono text-xs text-slate-500 dark:text-slate-400">
-              https://tower.im{resolvedPath}
-              {query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
+              https://tower.im{readOnly ? endpoint.path : resolvedPath}
+              {!readOnly && query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
             </div>
           </div>
-          <div className="text-xs text-slate-500">
+          {!readOnly && <div className="text-xs text-slate-500">
             {accessToken ? (
               <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-emerald-700 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300">
                 使用账号：{accountLabel}
@@ -442,9 +444,15 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                 未登录，可下方填入 Token
               </span>
             )}
-          </div>
+          </div>}
         </div>
 
+        {readOnly ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+            此删除接口仅供查看，调试工具已禁用请求发送。
+          </p>
+        ) : (
+        <>
         {currentUnavailable && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
             当前账号对该接口 {currentUnavailable}，已标记为不可用；可切换其他有权限的账号或重新授权后再试。
@@ -596,9 +604,11 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
             {error}
           </div>
         )}
+        </>
+        )}
         </div>
 
-        {response && (
+        {!readOnly && response && (
           <div className="rounded-2xl border border-slate-100/90 bg-white p-4 sm:p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] space-y-3 dark:border-slate-800/80 dark:bg-[#171522]">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs">
@@ -632,7 +642,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
         )}
       </section>
 
-      {confirmDanger && (
+      {!readOnly && confirmDanger && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-black/60"
           onClick={() => setConfirmDanger(false)}

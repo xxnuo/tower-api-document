@@ -502,6 +502,15 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效请求地址: " + err.Error()})
 			return
 		}
+		if method == http.MethodDelete {
+			// These two DELETE endpoints remove task state rather than a Tower resource.
+			todoPath, isTodo := strings.CutPrefix(outReq.URL.Path, "/api/v1/todos/")
+			id, action, _ := strings.Cut(todoPath, "/")
+			if !isTodo || id == "" || id == "." || id == ".." || (action != "completion" && action != "assignment") {
+				writeJSON(writer, http.StatusForbidden, map[string]any{"error": "此删除接口仅供查看，调试工具已禁用请求发送"})
+				return
+			}
+		}
 		outReq.Header.Set("Authorization", "Bearer "+token)
 		outReq.Header.Set("Accept", "application/json")
 		if bodyReader != nil {
