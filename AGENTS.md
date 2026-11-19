@@ -1,0 +1,1 @@
+Git 提交信息使用中文编写，并按提交功能添加前缀如 feat:、 fix:、docs:、style:、refactor:、test:、chore: 等。
