@@ -53,7 +53,7 @@ func TestWebEmailLoginAndSearchParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := restored.searchTodos(context.Background(), webSearchParams{Keyword: "76083", Limit: 5})
+	result, err := restored.searchTodos(context.Background(), "76083")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,14 +74,13 @@ func TestParseSectionLink(t *testing.T) {
 	}
 }
 
-func TestNumericTeamIDResolvesFromProjectPage(t *testing.T) {
+func TestSearchIncludesCurrentTeamAndTeamSwitcher(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /launchpad/", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<input id="team-id" value="1"><input id="team-guid" value="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><a href="/teams/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">其他</a>`))
 	})
-	mux.HandleFunc("GET /teams/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/projects", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<input id="team-id" value="750316">`))
-	})
+	var currentSearched bool
+	mux.HandleFunc("GET /teams/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/search", func(w http.ResponseWriter, r *http.Request) { currentSearched = true })
 	mux.HandleFunc("GET /teams/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/search", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<ul class="results"><li data-category="Todo"><p class="result-title" data-completed="false"><a href="/projects/cccccccccccccccccccccccccccccccc/todos/dddddddddddddddddddddddddddddddd">命中</a></p></li></ul>`))
 	})
@@ -91,12 +90,12 @@ func TestNumericTeamIDResolvesFromProjectPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := client.searchTodos(context.Background(), webSearchParams{Keyword: "76083", TeamID: "750316"})
+	result, err := client.searchTodos(context.Background(), "76083")
 	if err != nil {
 		t.Fatal(err)
 	}
 	items, _ := result["items"].([]any)
-	if len(items) != 1 || items[0].(map[string]any)["id"] != "dddddddddddddddddddddddddddddddd" {
+	if !currentSearched || len(items) != 1 || items[0].(map[string]any)["id"] != "dddddddddddddddddddddddddddddddd" {
 		t.Fatal(result)
 	}
 }

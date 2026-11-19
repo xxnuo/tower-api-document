@@ -128,13 +128,12 @@ export function HighlightedJSON({ text }) {
   return tokens;
 }
 
-export default function ApiExplorer({ accessToken, accountLabel }) {
+export default function ApiExplorer({ accountKey, accountLabel }) {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(TOWER_API_CATALOG[0].id);
   const [pathParams, setPathParams] = useState({});
   const [query, setQuery] = useState("");
   const [body, setBody] = useState("");
-  const [manualToken, setManualToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState(null);
   const [error, setError] = useState("");
@@ -175,9 +174,10 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   }, [search]);
 
   const paramNames = useMemo(() => extractPathParams(endpoint.path), [endpoint.path]);
-  const effectiveToken = (accessToken || manualToken).trim();
-  const accountKey = effectiveToken ? effectiveToken.slice(0, 12) : "anon";
-  const currentUnavailable = unavailableMap[`${accountKey}::${endpoint.id}`] || "";
+  const gatewaySearch = ["todos-search", "todos-advanced-search"].includes(endpoint.id);
+  const effectiveToken = accountKey || "";
+  const accountTag = effectiveToken ? effectiveToken.slice(0, 12) : "anon";
+  const currentUnavailable = unavailableMap[`${accountTag}::${endpoint.id}`] || "";
 
   const getParamValue = useCallback(
     (name) => {
@@ -224,7 +224,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   useEffect(() => {
     setParamOptions({});
     setPathParams({});
-  }, [accountKey]);
+  }, [accountTag]);
 
   const harvestOptionsFromResponse = useCallback((apiPath, respBody) => {
     const opts = toOptions(respBody);
@@ -305,7 +305,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   async function executeSend() {
     if (readOnly || renameLocked) return;
     if (!effectiveToken) {
-      setError("请先登录账号获取 Access Token，或在下方填入临时 Token");
+      setError("请先添加 Tower 账号");
       return;
     }
     if (hasUnfilledParams) {
@@ -332,7 +332,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
         setResponse(null);
         return;
       }
-      const mapKey = `${accountKey}::${endpoint.id}`;
+      const mapKey = `${accountTag}::${endpoint.id}`;
       if (data.status === 401) {
         setUnavailableMap((prev) => ({
           ...prev,
@@ -358,7 +358,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
 
   function handleSend() {
     if (!effectiveToken) {
-      setError("请先登录账号获取 Access Token，或在下方填入临时 Token");
+      setError("请先添加 Tower 账号");
       return;
     }
     if (hasUnfilledParams) {
@@ -381,13 +381,13 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   const curlCommand = useMemo(() => {
     const fullURL = `https://tower.im${resolvedPath}${query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}`;
     const lines = [`curl -X ${endpoint.method} "${fullURL}"`];
-    lines.push(`  -H "Authorization: Bearer ${effectiveToken || "<ACCESS_TOKEN>"}"`);
+    lines.push('  -H "Authorization: Bearer $TOWER_ACCESS_TOKEN"');
     if (endpoint.method !== "GET" && endpoint.method !== "DELETE" && body.trim()) {
       lines.push(`  -H "Content-Type: application/json"`);
       lines.push(`  -d '${body.replace(/\n/g, " ")}'`);
     }
     return lines.join(" \\\n");
-  }, [endpoint.method, resolvedPath, query, effectiveToken, body]);
+  }, [endpoint.method, resolvedPath, query, body]);
 
   const formattedResponse = useMemo(() => {
     if (!response) return "";
@@ -425,7 +425,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
               </div>
               {group.items.map((item) => {
                 const active = item.id === endpoint.id;
-                const unavail = unavailableMap[`${accountKey}::${item.id}`];
+                const unavail = unavailableMap[`${accountTag}::${item.id}`];
                 return (
                   <button
                     key={item.id}
@@ -491,12 +491,12 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
               )}
             </div>
             <CardDescription className="break-all font-mono text-xs">
-              https://tower.im{readOnly ? endpoint.path : resolvedPath}
+              {gatewaySearch ? "网关搜索 · " : "https://tower.im"}{readOnly ? endpoint.path : resolvedPath}
               {!readOnly && query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
             </CardDescription>
             {!readOnly && (
               <CardAction>
-                {accessToken ? (
+                {effectiveToken ? (
                   <Badge variant="outline" className={TONE_BADGE.success}>
                     <span className="size-1.5 rounded-full bg-emerald-500" />
                     使用账号：{accountLabel}
@@ -504,7 +504,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                 ) : (
                   <Badge variant="outline" className={TONE_BADGE.warning}>
                     <span className="size-1.5 rounded-full bg-amber-500" />
-                    未登录，可下方填入 Token
+                    请先添加 Tower 账号
                   </Badge>
                 )}
               </CardAction>
@@ -520,24 +520,8 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
               <>
                 {currentUnavailable && (
                   <StatusBanner tone="error">
-                    当前账号对该接口 {currentUnavailable}，已标记为不可用；可切换其他有权限的账号或重新授权后再试。
+                    当前账号对该接口 {currentUnavailable}，已标记为不可用；可切换其他有权限的账号后再试。
                   </StatusBanner>
-                )}
-
-                {!accessToken && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="api-manual-token" className="text-xs">
-                      临时 Access Token
-                    </Label>
-                    <Input
-                      id="api-manual-token"
-                      type="password"
-                      value={manualToken}
-                      onChange={(event) => setManualToken(event.target.value)}
-                      placeholder="输入 Bearer Access Token"
-                      className="font-mono text-xs"
-                    />
-                  </div>
                 )}
 
                 {paramNames.length > 0 && (
@@ -670,10 +654,10 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                   >
                     {renameLocked ? "仅团队超级管理员可执行" : loading ? "请求中..." : "发送请求"}
                   </Button>
-                  <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
+                  {!gatewaySearch && <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
                     {copiedKey === "curl" ? <CheckIcon /> : <CopyIcon />}
                     {copiedKey === "curl" ? "已复制 curl" : "复制 curl"}
-                  </Button>
+                  </Button>}
                   {endpoint.method === "DELETE" && (
                     <span className="text-xs text-destructive">
                       注意：DELETE 请求会操作真实 Tower 数据

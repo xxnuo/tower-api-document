@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -750,17 +751,47 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "access_token 不能为空"})
 			return
 		}
-		if strings.HasPrefix(token, "at_sk-") && cfg.Store != nil {
-			if acc, err := cfg.Store.EnsureFreshToken(cfg, token, false); err == nil {
-				token = acc.AccessToken
+		if strings.HasPrefix(token, "at_sk-") {
+			if cfg.Store == nil {
+				writeJSON(writer, 401, map[string]any{"error": "请重新连接 Tower 账号"})
+				return
 			}
+			acc, err := cfg.Store.EnsureFreshToken(cfg, token, false)
+			if err != nil {
+				writeJSON(writer, 401, map[string]any{"error": "Tower 连接已失效，请重新登录"})
+				return
+			}
+			token = acc.AccessToken
 		}
 
 		rawQuery := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?")
-		if method == http.MethodGet && apiPath == "/api/v1/todos/search" {
+		if method == http.MethodGet && apiPath == "/api/v1/todos/advanced_search" {
 			started := time.Now()
 			qVals, _ := url.ParseQuery(rawQuery)
 			limit, _ := strconv.Atoi(qVals.Get("limit"))
+			params := searchTodosParams{
+				Keyword:   qVals.Get("keyword"),
+				TeamID:    qVals.Get("team_id"),
+				ProjectID: qVals.Get("project_id"),
+				MemberID:  qVals.Get("member_id"),
+				Status:    qVals.Get("status"),
+				Limit:     limit,
+			}
+			fetch := func(callCtx context.Context, path, query string) (int, []byte, error) {
+				return doTowerHTTP(callCtx, cfg, token, http.MethodGet, path, query, nil)
+			}
+			statusCode, result := searchTodos(req.Context(), defaultTodoSearchLimiter, "proxy:"+strings.TrimSpace(payload.AccessToken), fetch, params)
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"status":      statusCode,
+				"status_text": fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+				"duration_ms": time.Since(started).Milliseconds(),
+				"body":        result,
+			})
+			return
+		}
+		if method == http.MethodGet && apiPath == "/api/v1/todos/search" {
+			started := time.Now()
+			qVals, _ := url.ParseQuery(rawQuery)
 			var statusCode int
 			var result map[string]any
 			var acc *StoredAccount
@@ -770,13 +801,12 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			} else {
 				acc, accErr = cfg.Store.GetByAuth(strings.TrimSpace(payload.AccessToken))
 			}
-			if accErr != nil {
+			if len(qVals) > 1 || (len(qVals) == 1 && !qVals.Has("keyword")) {
+				statusCode, result = http.StatusBadRequest, map[string]any{"error": "搜索任务只接受 keyword；筛选参数请用于高级搜索"}
+			} else if accErr != nil {
 				statusCode, result = http.StatusNotFound, map[string]any{"error": "找不到对应 Tower 账号"}
 			} else {
-				payloadResult, searchErr := runWebSearch(req.Context(), cfg, acc, webSearchParams{
-					Keyword: qVals.Get("keyword"), TeamID: qVals.Get("team_id"), ProjectID: qVals.Get("project_id"),
-					MemberID: qVals.Get("member_id"), Status: qVals.Get("status"), Limit: limit,
-				})
+				payloadResult, searchErr := runWebSearch(req.Context(), cfg, acc, qVals.Get("keyword"))
 				if searchErr != nil {
 					statusCode = http.StatusBadGateway
 					if errors.Is(searchErr, errNoWebSession) {

@@ -153,7 +153,7 @@ export default function AuthScreen({
             </div>
             <div>
               <CardTitle className="text-base font-semibold tracking-tight">AgentsTower</CardTitle>
-              <CardDescription className="text-xs">Tower OAuth 凭据托管与 MCP 网关</CardDescription>
+              <CardDescription className="text-xs">登录后绑定 Tower 账号，获取 MCP 接入配置。</CardDescription>
             </div>
           </div>
         </CardHeader>

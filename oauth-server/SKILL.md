@@ -16,7 +16,7 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
       "type": "http",
       "url": "{{MCP_URL}}",
       "headers": {
-        "AGENTS_TOWER_API_KEY": "<在 AgentsTower 凭据中心获取的 at_sk-... 密钥>"
+        "AGENTS_TOWER_API_KEY": "<在 AgentsTower 账号与接入获取的 at_sk-... 密钥>"
       }
     }
   }
@@ -24,6 +24,8 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 ```
 
 - 服务端会自动管理并续期底层 Tower OAuth Token，`AGENTS_TOWER_API_KEY` 长期有效（除非用户在控制台手动重置）。
+
+按关键词查找任务可调用 `search_todos`，只需传入 `keyword`。指定成员、项目、团队或完成状态时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
 
 ## 2. 标准 ID 查询链路
 

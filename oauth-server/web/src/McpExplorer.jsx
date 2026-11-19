@@ -436,7 +436,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   function handleInvokeClick() {
     if (!effectiveKey) {
-      setCallError("请先在凭据中心绑定 Tower 账号生成 MCP 密钥，或在下方填入临时 AGENTS_TOWER_API_KEY");
+      setCallError("请先在账号与接入绑定 Tower 账号生成 MCP 密钥，或在下方填入临时 AGENTS_TOWER_API_KEY");
       return;
     }
     let argsObj;
@@ -556,7 +556,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
               <p className="text-xs text-muted-foreground">尚未获取到 AGENTS_TOWER_API_KEY</p>
               {onGoCreds && (
                 <Button type="button" size="sm" onClick={onGoCreds}>
-                  前往凭据中心绑定账号
+                  前往账号与接入绑定账号
                 </Button>
               )}
             </div>

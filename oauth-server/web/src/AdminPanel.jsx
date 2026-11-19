@@ -144,7 +144,7 @@ export default function AdminPanel({ currentUser }) {
       if (!res.ok || data.error) {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
-      setStatus(`已删除用户 ${target.username} 及其关联凭据`);
+      setStatus(`已删除用户 ${target.username} 及其绑定的 Tower 账号`);
       loadUsers();
     } catch (err) {
       setError(err.message);
@@ -384,7 +384,7 @@ export default function AdminPanel({ currentUser }) {
           title={confirmTarget?.type === "delete" ? "确认删除用户" : "确认取消管理员权限"}
           description={
             confirmTarget?.type === "delete"
-              ? `确定删除账户「${confirmTarget.user.username}」吗？该用户的服务端会话与绑定的全部 Tower 凭据/MCP 密钥将被彻底删除。`
+              ? `确定删除账户「${confirmTarget.user.username}」吗？该用户的服务端会话与绑定的全部 Tower 账号绑定及 MCP 密钥将被彻底删除。`
               : confirmTarget
                 ? `确定将「${confirmTarget.user.username}」降为普通用户吗？`
                 : ""

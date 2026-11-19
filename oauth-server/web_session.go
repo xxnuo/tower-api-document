@@ -271,31 +271,17 @@ func (client *webClient) loginWithEmail(ctx context.Context, email, password str
 	return webEmail, nil
 }
 
-type webSearchParams struct {
-	Keyword   string
-	TeamID    string
-	ProjectID string
-	MemberID  string
-	Status    string
-	Limit     int
-}
-
-func (client *webClient) searchTodos(ctx context.Context, params webSearchParams) (map[string]any, error) {
-	keyword := strings.TrimSpace(params.Keyword)
+func (client *webClient) searchTodos(ctx context.Context, keyword string) (map[string]any, error) {
+	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return nil, errors.New("keyword 不能为空")
 	}
-	limit := params.Limit
-	if limit <= 0 {
-		limit = defaultListPageSize
-	} else if limit > maxListPageSize {
-		limit = maxListPageSize
-	}
-	teams, err := client.teamGUIDs(ctx, params.TeamID)
+	const limit = defaultListPageSize
+	teams, err := client.teamGUIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	status := normalizeWebStatus(params.Status)
+
 	items := make([]any, 0, limit)
 	seen := map[string]struct{}{}
 	for _, team := range teams {
@@ -303,12 +289,6 @@ func (client *webClient) searchTodos(ctx context.Context, params webSearchParams
 			"keyword":       {keyword},
 			"category":      {"2"},
 			"exclude_trash": {"true"},
-		}
-		if params.ProjectID != "" {
-			query.Set("target_gid", params.ProjectID)
-		}
-		if params.MemberID != "" {
-			query.Set("member_guid", params.MemberID)
 		}
 		for page := 1; page <= 3 && len(items) < limit; page++ {
 			if page > 1 {
@@ -319,7 +299,7 @@ func (client *webClient) searchTodos(ctx context.Context, params webSearchParams
 				return nil, getErr
 			}
 			added := 0
-			for _, item := range parseSearchItems(text, status) {
+			for _, item := range parseSearchItems(text) {
 				id := fmt.Sprint(item["id"])
 				if _, ok := seen[id]; ok {
 					continue
@@ -337,26 +317,25 @@ func (client *webClient) searchTodos(ctx context.Context, params webSearchParams
 			}
 		}
 	}
-	scope := params.TeamID
-	if scope == "" {
-		scope = "全部已加入团队"
-	}
 	return map[string]any{
 		"keyword": keyword,
-		"team":    scope,
-		"status":  status,
-		"count":   len(items),
-		"items":   items,
+
+		"count": len(items),
+		"items": items,
 	}, nil
 }
 
-func (client *webClient) teamGUIDs(ctx context.Context, teamID string) ([]string, error) {
+func (client *webClient) teamGUIDs(ctx context.Context) ([]string, error) {
 	page, err := client.get(ctx, "/launchpad/")
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]struct{}{}
 	guids := make([]string, 0)
+	if current := hiddenValues(page)["team-guid"]; guidPattern.MatchString(current) {
+		seen[current] = struct{}{}
+		guids = append(guids, current)
+	}
 	for _, match := range teamHrefPattern.FindAllStringSubmatch(page, -1) {
 		if _, ok := seen[match[1]]; ok {
 			continue
@@ -364,30 +343,10 @@ func (client *webClient) teamGUIDs(ctx context.Context, teamID string) ([]string
 		seen[match[1]] = struct{}{}
 		guids = append(guids, match[1])
 	}
-	if teamID == "" {
-		if len(guids) == 0 {
-			return nil, errors.New("网页登录后没有可见团队")
-		}
-		return guids, nil
+	if len(guids) == 0 {
+		return nil, errors.New("网页登录后没有可见团队，请重新登录 Tower")
 	}
-	if guidPattern.MatchString(teamID) {
-		return []string{teamID}, nil
-	}
-	hidden := hiddenValues(page)
-	if hidden["team-id"] == teamID && guidPattern.MatchString(hidden["team-guid"]) {
-		return []string{hidden["team-guid"]}, nil
-	}
-	// /teams/{guid} 会跳到个人待办并丢掉 team-id，项目页才带数字团队编号。
-	for _, guid := range guids {
-		teamPage, getErr := client.get(ctx, "/teams/"+guid+"/projects")
-		if getErr != nil {
-			continue
-		}
-		if hiddenValues(teamPage)["team-id"] == teamID {
-			return []string{guid}, nil
-		}
-	}
-	return nil, fmt.Errorf("找不到团队 %s", teamID)
+	return guids, nil
 }
 
 type sectionLink struct {
@@ -553,15 +512,12 @@ func useWebClient(ctx context.Context, cfg Config, acc *StoredAccount) (*webClie
 }
 
 func executeSearchTodos(ctx context.Context, cfg Config, _ string, acc *StoredAccount, args map[string]any) (string, bool) {
-	limit, _ := strconvAtoi(stringifyArg(args["limit"]))
-	payload, err := runWebSearch(ctx, cfg, acc, webSearchParams{
-		Keyword:   stringifyArg(args["keyword"]),
-		TeamID:    stringifyArg(args["team_id"]),
-		ProjectID: stringifyArg(args["project_id"]),
-		MemberID:  stringifyArg(args["member_id"]),
-		Status:    stringifyArg(args["status"]),
-		Limit:     limit,
-	})
+	for k := range args {
+		if k != "keyword" {
+			return webToolText("search_todos", nil, errors.New("搜索任务只接受 keyword；按条件查询请使用 advanced_search_todos"))
+		}
+	}
+	payload, err := runWebSearch(ctx, cfg, acc, stringifyArg(args["keyword"]))
 	return webToolText("search_todos", payload, err)
 }
 
@@ -595,13 +551,13 @@ func executeRemoveTodoProject(ctx context.Context, cfg Config, acc *StoredAccoun
 	return webToolText("remove_todo_project", payload, err)
 }
 
-func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, params webSearchParams) (map[string]any, error) {
+func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, keyword string) (map[string]any, error) {
 	client, err := useWebClient(ctx, cfg, acc)
 	if err != nil {
 		return nil, err
 	}
 	defer client.save()
-	return client.searchTodos(ctx, params)
+	return client.searchTodos(ctx, keyword)
 }
 
 func webToolText(tool string, payload map[string]any, err error) (string, bool) {
@@ -613,27 +569,7 @@ func webToolText(tool string, payload map[string]any, err error) (string, bool) 
 	return resultProfiles[tool].compositeText(raw), false
 }
 
-func strconvAtoi(raw string) (int, error) {
-	if raw == "" {
-		return 0, nil
-	}
-	var number int
-	_, err := fmt.Sscan(raw, &number)
-	return number, err
-}
-
-func normalizeWebStatus(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "uncompleted", "open":
-		return "uncompleted"
-	case "completed", "done":
-		return "completed"
-	default:
-		return "all"
-	}
-}
-
-func parseSearchItems(page, status string) []map[string]any {
+func parseSearchItems(page string) []map[string]any {
 	matches := searchItemPattern.FindAllStringSubmatch(page, -1)
 	items := make([]map[string]any, 0, len(matches))
 	for _, match := range matches {
@@ -642,12 +578,6 @@ func parseSearchItems(page, status string) []map[string]any {
 			continue
 		}
 		completed := firstMatch(completedPattern, match[2]) == "true"
-		if status == "completed" && !completed {
-			continue
-		}
-		if status == "uncompleted" && completed {
-			continue
-		}
 		item := map[string]any{
 			"id":        firstMatch(todoIDPattern, link[1]),
 			"title":     plainText(link[2]),

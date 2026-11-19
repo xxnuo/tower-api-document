@@ -5,7 +5,6 @@ import {
   CopyIcon,
   CpuIcon,
   DesktopIcon,
-  DownloadSimpleIcon,
   KeyIcon,
   LockKeyIcon,
   MoonIcon,
@@ -21,7 +20,7 @@ import AuthScreen, { removeQuickLoginEntry, saveQuickLoginEntry } from "./AuthSc
 import McpExplorer from "./McpExplorer.jsx";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -49,7 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { BrandMark, ConfirmDialog, CopyField, StatusBanner, TONE_BADGE } from "@/components/shared";
+import { BrandMark, ConfirmDialog, CopyField, StatusBanner } from "@/components/shared";
 
 const LEGACY_STORAGE_KEY = "tower_oauth_result_v1";
 const ACCOUNTS_STORAGE_KEY = "tower_oauth_accounts_v1";
@@ -80,7 +79,7 @@ function getAccountId(data) {
 function buildStoreFromServerAccounts(accounts) {
   const list = Array.isArray(accounts) ? accounts : [];
   const items = list
-    .filter((item) => item?.token?.access_token)
+    .filter((item) => item?.mcp_api_key || item?.token?.access_token)
     .map((item) => ({ ...item, id: getAccountId(item) }));
   return {
     activeId: items[0]?.id || null,
@@ -133,17 +132,6 @@ function maskSecretsInText(text, secrets) {
   return out;
 }
 
-function formatRemaining(token, now) {
-  if (!token?.created_at || !token?.expires_in) return null;
-  const diffSec = Math.floor((token.created_at + token.expires_in) * 1000 - now) / 1000;
-  if (diffSec <= 0) return { expired: true, soon: false, label: "已过期" };
-  const hours = Math.floor(diffSec / 3600);
-  const mins = Math.floor((diffSec % 3600) / 60);
-  if (hours > 0) return { expired: false, soon: false, label: `剩余 ${hours}小时${mins}分` };
-  if (mins > 0) return { expired: false, soon: mins < 15, label: `剩余 ${mins}分钟` };
-  return { expired: false, soon: true, label: "即将过期" };
-}
-
 export default function App() {
   const [config, setConfig] = useState({ is_oob: false });
   const [authChecking, setAuthChecking] = useState(true);
@@ -157,7 +145,6 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [confirmAction, setConfirmAction] = useState("");
   const [showSecrets, setShowSecrets] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
   const [requestedTab, setRequestedTab] = useState(readTabFromHash);
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || "system");
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -195,11 +182,6 @@ export default function App() {
     media.addEventListener("change", applyTheme);
     return () => media.removeEventListener("change", applyTheme);
   }, [theme]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     setWebQR("");
@@ -261,7 +243,7 @@ export default function App() {
           setOtpCode(data.code || "");
         } else if (data.token?.access_token) {
           saveCreds(data);
-          setStatus("授权登录成功");
+          setStatus("Tower 账号已绑定");
         }
       })
       .catch(() => {});
@@ -379,7 +361,7 @@ export default function App() {
       const res = await fetch("/api/skill.md");
       let text = await res.text();
       if (mcpKey) {
-        text = text.replace("<在 AgentsTower 凭据中心获取的 at_sk-... 密钥>", mcpKey);
+        text = text.replace("<在 AgentsTower 账号与接入获取的 at_sk-... 密钥>", mcpKey);
       }
       await navigator.clipboard.writeText(text);
       setSkillCopied(true);
@@ -414,7 +396,7 @@ export default function App() {
       saveCreds(data);
       setOtpCode("");
       setCaptcha("");
-      setStatus("凭据获取成功");
+      setStatus("Tower 账号已绑定");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -437,35 +419,6 @@ export default function App() {
     openTowerLogin("");
   }
 
-  async function handleRefresh() {
-    if (!creds?.token?.refresh_token) return;
-    setLoading(true);
-    setError("");
-    setConfirmAction("");
-    setStatus("正在刷新...");
-    try {
-      const res = await fetch("/oauth2/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          refresh_token: creds.token.refresh_token,
-          access_token: creds.token.access_token,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error || !data.access_token) {
-        throw new Error(data.error_description || data.error || `HTTP ${res.status}`);
-      }
-      saveCreds({ ...creds, token: data });
-      setStatus("Token 已刷新");
-    } catch (err) {
-      setStatus("");
-      setError(`刷新失败: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function handleSelectAccount(id) {
     setStatus("");
     setError("");
@@ -473,41 +426,30 @@ export default function App() {
     persistStore({ ...store, activeId: id });
   }
 
-  function handleLogoutCurrent() {
-    if (!creds) return;
-    const credToDelete = creds.mcp_api_key || creds.token?.access_token || "";
-    if (credToDelete) {
-      fetch("/api/account", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential: credToDelete }),
-      }).catch(() => {});
-    }
-    const remaining = store.items.filter((item) => item.id !== creds.id);
-    setConfirmAction("");
-    setStatus(remaining.length > 0 ? "已登出并移除服务端凭据" : "");
+  async function unlinkAccounts(items) {
+    setLoading(true);
     setError("");
-    persistStore({
-      activeId: remaining[0]?.id || null,
-      items: remaining,
-    });
-  }
-
-  function handleClearAll() {
-    for (const item of store.items) {
-      const credToDelete = item.mcp_api_key || item.token?.access_token || "";
-      if (credToDelete) {
-        fetch("/api/account", {
+    setStatus("");
+    const removed = new Set();
+    try {
+      for (const item of items) {
+        const res = await fetch("/api/account", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credential: credToDelete }),
-        }).catch(() => {});
+          body: JSON.stringify({ credential: item.mcp_api_key || item.token?.access_token }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+        removed.add(item.id);
       }
+      setStatus("已解除绑定");
+    } catch (err) {
+      setError(`解除绑定失败：${err.message}`);
+    } finally {
+      const remaining = store.items.filter(item => !removed.has(item.id));
+      persistStore({ activeId: remaining.find(item => item.id === store.activeId)?.id || remaining[0]?.id || null, items: remaining });
+      setConfirmAction("");
+      setLoading(false);
     }
-    setConfirmAction("");
-    setStatus("");
-    setError("");
-    persistStore({ activeId: null, items: [] });
   }
 
   async function handleSyncCurrent() {
@@ -526,7 +468,7 @@ export default function App() {
         throw new Error(data.error || `HTTP ${res.status}`);
       }
       saveCreds({ ...creds, ...data });
-      setStatus("凭据已同步至服务端并生成 MCP 密钥");
+      setStatus("MCP 接入已启用");
     } catch (err) {
       setStatus("");
       setError(`同步失败: ${err.message}`);
@@ -688,50 +630,9 @@ export default function App() {
     }
   }
 
-  async function handleVerify() {
-    if (!creds?.token?.access_token) return;
-    setLoading(true);
-    setError("");
-    setStatus("正在检测凭据...");
-    try {
-      const res = await fetch("/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ access_token: creds.token.access_token }),
-      });
-      const data = await res.json();
-      if (!data.valid) {
-        setStatus("");
-        setError(`凭据已失效: ${data.error || "请刷新或重新登录"}`);
-        return;
-      }
-      if (data.user) {
-        saveCreds({ ...creds, user: data.user });
-      }
-      setStatus("凭据有效，可正常调用 Tower API");
-    } catch (err) {
-      setStatus("");
-      setError(`检测失败: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const user = creds?.user;
   const token = creds?.token;
   const mcpKey = creds?.mcp_api_key || "";
-  const remaining = formatRemaining(token, now);
-  const isTokenExpired = Boolean(
-    token?.created_at &&
-      token?.expires_in &&
-      now >= (token.created_at + token.expires_in) * 1000
-  );
-  const expiryText =
-    token?.created_at && token?.expires_in
-      ? `过期时间: ${new Date((token.created_at + token.expires_in) * 1000).toLocaleString()}`
-      : token?.expires_in
-        ? `有效期: ${token.expires_in} 秒`
-        : "";
   const secretValues = [token?.access_token, token?.refresh_token, mcpKey].filter(Boolean);
   const maskIfHidden = (text) => (showSecrets ? text : maskSecretsInText(text, secretValues));
   const mcpServerURL = new URL(config.mcp_url || "/mcp", window.location.origin).href;
@@ -750,13 +651,6 @@ export default function App() {
     null,
     2
   );
-  const envSnippet = token?.access_token
-    ? `AGENTS_TOWER_API_KEY=${mcpKey}\nTOWER_ACCESS_TOKEN=${token.access_token}\nTOWER_REFRESH_TOKEN=${token.refresh_token || ""}`
-    : "";
-  const curlSnippet = token?.access_token
-    ? `curl -H "Authorization: Bearer ${token.access_token}" https://tower.im/api/v1/user`
-    : "";
-  const fullJSON = creds ? JSON.stringify(creds, null, 2) : "";
   const displayName =
     authUser?.display_name || authUser?.username || user?.nickname || user?.email || "开发者";
   const towerAccountLabel = user?.nickname || user?.email || token?.email || "当前账号";
@@ -787,35 +681,12 @@ export default function App() {
   }
 
   const navItems = [
-    { id: "creds", label: "凭据中心", icon: KeyIcon, badge: store.items.length > 0 ? `${store.items.length}` : null },
+    { id: "creds", label: "账号与接入", icon: KeyIcon, badge: store.items.length > 0 ? `${store.items.length}` : null },
     { id: "mcp", label: "MCP 调试", icon: CpuIcon, badge: mcpKey ? "就绪" : null },
     ...(authUser.role === "admin" ? [
       { id: "explorer", label: "API 调试", icon: TerminalWindowIcon },
       { id: "admin", label: "成员管理", icon: UsersIcon },
     ] : []),
-  ];
-
-  const telemetryCells = [
-    {
-      label: "已托管账号",
-      value: `${store.items.length}`,
-      sub: store.items.length > 0 ? "服务端 SQLite 持久化" : "尚未绑定 Tower 账号",
-    },
-    {
-      label: "MCP 服务状态",
-      value: mcpKey ? "已就绪" : token?.access_token ? "待同步" : "未登录",
-      sub: `${config.mcp_tools || 50} 个 Tower 工具可用`,
-    },
-    {
-      label: "Token 有效期",
-      value: remaining ? remaining.label : "—",
-      sub: token?.refresh_token ? "MCP 调用自动静默续期" : "需重新完成授权",
-    },
-    {
-      label: "授权模式",
-      value: "网页登录 + OAuth",
-      sub: "由网关完成授权码交换",
-    },
   ];
 
   return (
@@ -867,7 +738,7 @@ export default function App() {
                 <SelectContent align="start" className="w-56">
                   {store.items.map((item) => (
                     <SelectItem key={item.id} value={item.id} className="text-xs">
-                      {item.user?.nickname || item.user?.email || item.token?.email || "已授权成员"}
+                      {item.user?.nickname || item.user?.email || item.token?.email || "Tower 成员"}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1090,77 +961,16 @@ export default function App() {
           />
         ) : activeTab === "explorer" ? (
           <ApiExplorer
-            accessToken={token?.access_token || ""}
+            accountKey={mcpKey}
             accountLabel={towerAccountLabel}
           />
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-5 sm:px-6 sm:py-6 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="font-heading text-lg font-semibold tracking-tight">凭据中心</h1>
-                    <Badge variant={authUser.role === "admin" ? "default" : "secondary"}>
-                      {authUser.role === "admin" ? "系统管理员" : "普通用户"}
-                    </Badge>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      @{authUser.username || displayName}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    成员 Tower OAuth 2.0 凭据托管至服务端 SQLite，并签发专属 AI Agent MCP 鉴权密钥。
-                  </p>
-                </div>
-                <Button type="button" size="sm" onClick={handleStartLogin}>
-                  <PlusIcon />
-                  绑定 Tower 账号
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border bg-border">
-                {telemetryCells.map((cell) => (
-                  <div key={cell.label} className="bg-card px-4 py-3.5">
-                    <div className="text-[11px] font-medium text-muted-foreground">{cell.label}</div>
-                    <div className="mt-1 truncate font-heading text-base font-semibold tracking-tight tabular-nums">
-                      {cell.value}
-                    </div>
-                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{cell.sub}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-                <Card className="xl:col-span-8 min-w-0">
-                  <CardContent className="space-y-4">
-                    {store.items.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 border-b pb-3.5">
-                        <span className="mr-1 text-xs font-medium text-muted-foreground">已绑定账号</span>
-                        {store.items.map((item) => {
-                          const active = item.id === creds?.id;
-                          const label =
-                            item.user?.nickname || item.user?.email || item.token?.email || "已授权成员";
-                          return (
-                            <Button
-                              key={item.id}
-                              type="button"
-                              size="sm"
-                              variant={active ? "default" : "outline"}
-                              onClick={() => handleSelectAccount(item.id)}
-                            >
-                              {item.user?.gavatar && (
-                                <img src={item.user.gavatar} alt="" className="size-3.5 rounded-sm object-cover" />
-                              )}
-                              <span>{label}</span>
-                            </Button>
-                          );
-                        })}
-                        <Button type="button" size="sm" variant="outline" onClick={handleStartLogin}>
-                          <PlusIcon />
-                          添加账号
-                        </Button>
-                      </div>
-                    )}
-
+              <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
+                <h1 className="font-heading text-lg font-semibold tracking-tight">账号与接入</h1>
+                {creds && <Button type="button" size="sm" onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>}
+              </header>
                     {error && <StatusBanner tone="error">{error}</StatusBanner>}
 
                     {otpCode ? (
@@ -1202,324 +1012,63 @@ export default function App() {
                       </form>
                     ) : null}
 
-                    {token?.access_token ? (
-                      <div className="space-y-4">
-                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3.5">
-                          <div className="flex items-center gap-3 min-w-0">
-                            {user?.gavatar ? (
-                              <img
-                                src={user.gavatar}
-                                alt="avatar"
-                                className="size-9 rounded-md border object-cover shrink-0"
-                              />
-                            ) : (
-                              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-background font-mono text-xs font-semibold">
-                                {towerAccountLabel.slice(0, 1).toUpperCase()}
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="truncate text-sm font-semibold">
-                                  {user?.nickname || token.email || "已授权成员"}
-                                </span>
-                                {remaining && (
-                                  <Badge
-                                    variant="outline"
-                                    className={
-                                      remaining.expired
-                                        ? TONE_BADGE.danger
-                                        : remaining.soon
-                                          ? TONE_BADGE.warning
-                                          : TONE_BADGE.success
-                                    }
-                                  >
-                                    <span
-                                      className={`size-1.5 rounded-full ${
-                                        remaining.expired
-                                          ? "bg-red-500"
-                                          : remaining.soon
-                                            ? "bg-amber-500"
-                                            : "bg-emerald-500"
-                                      }`}
-                                    />
-                                    <span className="tabular-nums">{remaining.label}</span>
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
-                                {[user?.email || token.email, expiryText].filter(Boolean).join(" · ")}
-                              </div>
-                            </div>
+              {status && <StatusBanner tone="success">{status}</StatusBanner>}
+              {creds ? (
+                <div className="grid items-start gap-5 xl:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)]">
+                  <Card size="sm">
+                    <CardHeader className="border-b"><CardTitle>已绑定账号</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {store.items.map(item => (
+                        <button type="button" key={item.id} aria-pressed={item.id === creds.id}
+                          className="flex w-full items-center justify-between gap-2 rounded-md border p-3 text-left aria-pressed:border-primary aria-pressed:bg-muted/40"
+                          onClick={() => handleSelectAccount(item.id)}>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium">{item.user?.nickname || item.user?.email || "Tower 成员"}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{item.user?.email}</span>
+                          </span>
+                          {item.id === creds.id && <CheckIcon aria-label="当前账号" />}
+                        </button>
+                      ))}
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmAction("logout")}>解除当前账号绑定</Button>
+                      {store.items.length > 1 && <Button size="sm" variant="ghost" onClick={() => setConfirmAction("clear")}>解除全部绑定</Button>}
+                    </CardContent>
+                  </Card>
+                  <Card size="sm" className="min-w-0">
+                    <CardHeader className="border-b">
+                      <CardTitle>MCP 接入</CardTitle>
+                      <CardDescription>将「{towerAccountLabel}」的配置复制到 MCP 客户端，即可使用 Tower 工具。</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {!creds.web_connected && <div className="flex flex-wrap items-center gap-2 text-sm">
+                        使用网页搜索前，请补全此账号的登录。
+                        <Button variant="outline" size="sm" onClick={() => openTowerLogin(creds.id)}>连接 Tower 网页</Button>
+                      </div>}
+                      {mcpKey ? <>
+                        <CopyField label="客户端配置" value={mcpConfigSnippet} displayValue={maskIfHidden(mcpConfigSnippet)} heightClass="min-h-44" />
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" onClick={() => navigateToTab("mcp")}>测试 MCP 连接</Button>
+                          <Button size="sm" variant="outline" onClick={handleCopySkillMD}>{skillCopied ? "已复制" : "复制 Agent 指南"}</Button>
+                          <a href="/api/skill.md?download=1" download="SKILL.md" className={buttonVariants({variant:"outline",size:"sm"})}>下载指南</a>
+                        </div>
+                        <details className="space-y-3 border-t pt-3">
+                          <summary className="cursor-pointer text-xs font-medium">管理 MCP 密钥</summary>
+                          <CopyField label="AGENTS_TOWER_API_KEY" value={mcpKey} displayValue={maskIfHidden(mcpKey)} heightClass="h-12" />
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => setShowSecrets(v => !v)}>{showSecrets ? "隐藏密钥" : "显示密钥"}</Button>
+                            <Button size="sm" variant="outline" onClick={() => setConfirmAction("rotate_mcp")}>重置密钥</Button>
                           </div>
-
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setShowSecrets((prev) => !prev)}
-                            >
-                              {showSecrets ? "隐藏明文" : "显示明文"}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={loading}
-                              onClick={handleVerify}
-                            >
-                              检测有效性
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={loading || !token.refresh_token}
-                              onClick={() => (isTokenExpired ? handleRefresh() : setConfirmAction("refresh"))}
-                            >
-                              刷新 Token
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setConfirmAction("logout")}
-                            >
-                              登出当前账号
-                            </Button>
-                            {store.items.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => setConfirmAction("clear")}
-                              >
-                                清空全部
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        {status && <StatusBanner tone="success">{status}</StatusBanner>}
-
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span>{creds.web_connected ? "Tower 网页已连接" : "此账号尚未连接 Tower 网页"}</span>
-                          <Button type="button" size="sm" variant="outline" onClick={() => openTowerLogin(creds.id)}>
-                            {creds.web_connected ? "重新连接网页" : "连接网页"}
-                          </Button>
-                        </div>
-
-                        <Card size="sm" className="shadow-none">
-                          <CardHeader className="border-b">
-                            <div className="flex items-center gap-2">
-                              <CardTitle className="text-sm">Agent MCP 接入配置</CardTitle>
-                              <Badge variant="secondary" className="font-mono">
-                                Streamable HTTP
-                              </Badge>
-                            </div>
-                            <CardDescription className="text-xs">
-                              添加到 Claude Code、Codex、Cursor 等客户端后，Agent 可直接调用 Tower 工具，Token 过期由服务端自动续期。
-                            </CardDescription>
-                            <CardAction className="flex flex-wrap items-center gap-1.5">
-                              <Button type="button" variant="outline" size="sm" onClick={handleCopySkillMD}>
-                                {skillCopied ? <CheckIcon /> : <CopyIcon />}
-                                {skillCopied ? "已复制 SKILL.md" : "复制 SKILL.md"}
-                              </Button>
-                              <a
-                                href="/api/skill.md?download=1"
-                                download="SKILL.md"
-                                className={buttonVariants({ variant: "outline", size: "sm" })}
-                              >
-                                <DownloadSimpleIcon />
-                                下载 SKILL.md
-                              </a>
-                              {mcpKey ? (
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  disabled={loading}
-                                  onClick={() => setConfirmAction("rotate_mcp")}
-                                >
-                                  重置 MCP 密钥
-                                </Button>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  disabled={loading}
-                                  onClick={handleSyncCurrent}
-                                >
-                                  同步生成 MCP 密钥
-                                </Button>
-                              )}
-                            </CardAction>
-                          </CardHeader>
-
-                          <CardContent className="space-y-3.5">
-                            {mcpKey && (
-                              <CopyField
-                                label="AGENTS_TOWER_API_KEY（服务端内部鉴权密钥）"
-                                value={mcpKey}
-                                displayValue={maskIfHidden(mcpKey)}
-                                heightClass="h-11"
-                              />
-                            )}
-
-                            <CopyField
-                              label="mcpServers 客户端配置（直接粘贴到 mcp.json）"
-                              value={mcpConfigSnippet}
-                              displayValue={maskIfHidden(mcpConfigSnippet)}
-                              heightClass="min-h-44 max-h-64"
-                            />
-                          </CardContent>
-                        </Card>
-
-                        {authUser.role === "admin" && (
-                          <details className="group rounded-lg border bg-muted/20">
-                            <summary className="flex list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                              <span>原始 OAuth 凭据详情（Access / Refresh Token、.env、curl）</span>
-                              <svg
-                                className="size-3.5 shrink-0 transition-transform group-open:rotate-180"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <polyline points="6 9 12 15 18 9" />
-                              </svg>
-                            </summary>
-                            <div className="space-y-3 border-t p-4">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <CopyField
-                                  label="Access Token"
-                                  value={token.access_token}
-                                  displayValue={maskIfHidden(token.access_token)}
-                                  heightClass="h-16"
-                                />
-                                <CopyField
-                                  label="Refresh Token"
-                                  value={token.refresh_token || "(无)"}
-                                  displayValue={token.refresh_token ? maskIfHidden(token.refresh_token) : "(无)"}
-                                  heightClass="h-16"
-                                />
-                              </div>
-                              <CopyField
-                                label="Authorization 请求头"
-                                value={`Bearer ${token.access_token}`}
-                                displayValue={maskIfHidden(`Bearer ${token.access_token}`)}
-                                heightClass="h-12"
-                              />
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <CopyField
-                                  label=".env 变量"
-                                  value={envSnippet}
-                                  displayValue={maskIfHidden(envSnippet)}
-                                  heightClass="h-16"
-                                />
-                                <CopyField
-                                  label="curl 测试命令"
-                                  value={curlSnippet}
-                                  displayValue={maskIfHidden(curlSnippet)}
-                                  heightClass="h-16"
-                                />
-                              </div>
-                              <CopyField
-                                label="完整 JSON 凭据"
-                                value={fullJSON}
-                                displayValue={maskIfHidden(fullJSON)}
-                                heightClass="h-40"
-                              />
-                              <div className="rounded-lg border bg-card px-3.5 py-2.5 text-xs">
-                                <div className="font-medium">官方 API 文档</div>
-                                <div className="mt-1 flex flex-col gap-1 font-mono text-[11px]">
-                                  <a
-                                    href="https://docs.tower.im/"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                  >
-                                    https://docs.tower.im/
-                                  </a>
-                                  <a
-                                    href="https://github.com/mycolorway/tower-api-document"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                  >
-                                    https://github.com/mycolorway/tower-api-document
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          </details>
-                        )}
-                      </div>
-                    ) : (
-                      !otpCode && (
-                        <div className="rounded-lg border border-dashed p-8 text-center space-y-3.5">
-                          <p className="mx-auto max-w-md text-xs leading-relaxed text-muted-foreground">
-                            使用邮箱或微信登录 Tower 后，即可在本页管理凭据、获取{" "}
-                            <code className="font-mono text-foreground">at_sk-...</code> 密钥并接入 AI Agent。
-                          </p>
-                          <Button type="button" onClick={handleStartLogin}>
-                            登录 Tower 账号
-                          </Button>
-                        </div>
-                      )
-                    )}
-                  </CardContent>
+                        </details>
+                      </> : <Button disabled={loading} onClick={handleSyncCurrent}>启用 MCP 接入</Button>}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : !otpCode && (
+                <Card className="items-center py-10 text-center">
+                  <CardHeader><CardTitle>添加你的第一个 Tower 账号</CardTitle>
+                    <CardDescription>使用微信扫码或邮箱密码登录，绑定后即可复制 MCP 配置。</CardDescription></CardHeader>
+                  <Button onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>
                 </Card>
-
-                <Card className="xl:col-span-4 min-w-0">
-                  <CardHeader className="border-b">
-                    <CardTitle className="text-sm">使用说明</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ol className="space-y-3 text-xs leading-relaxed text-muted-foreground">
-                      <li className="flex gap-2.5">
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
-                          1
-                        </span>
-                        <span>
-                          登录 Tower 账号并完成授权后，AgentsTower 会将 OAuth 凭据加密保存至服务端 SQLite，并签发专属内部鉴权密钥{" "}
-                          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
-                            AGENTS_TOWER_API_KEY
-                          </code>
-                          。
-                        </span>
-                      </li>
-                      <li className="flex gap-2.5">
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
-                          2
-                        </span>
-                        <span>
-                          复制左侧「mcpServers 客户端配置」到 Claude Code、Codex、Cursor 等客户端，即可通过 Streamable HTTP MCP 调用全部 Tower 工具。
-                        </span>
-                      </li>
-                      <li className="flex gap-2.5">
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
-                          3
-                        </span>
-                        <span>
-                          Agent 调用 MCP 时若 Access Token 过期，服务端会自动通过 Refresh Token 静默续期，无需人工干预。
-                        </span>
-                      </li>
-                      <li className="flex gap-2.5">
-                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
-                          4
-                        </span>
-                        <span>
-                          直接调试原始 Tower REST API 时，可在请求头携带{" "}
-                          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
-                            Authorization: Bearer &lt;access_token&gt;
-                          </code>
-                          。
-                        </span>
-                      </li>
-                    </ol>
-                  </CardContent>
-                </Card>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1531,39 +1080,32 @@ export default function App() {
           if (!open) setConfirmAction("");
         }}
         title={
-          confirmAction === "refresh"
-            ? "确认刷新 Token"
-            : confirmAction === "rotate_mcp"
+          confirmAction === "rotate_mcp"
               ? "确认重置 MCP 密钥"
               : confirmAction === "logout"
-                ? "确认登出当前账号"
-                : "确认清空全部账号"
+                ? "解除当前 Tower 账号绑定"
+                : "解除全部 Tower 账号绑定"
         }
         description={
-          confirmAction === "refresh"
-            ? "当前 Access Token 尚未过期，刷新后旧 Token 将立即失效。是否继续刷新？"
-            : confirmAction === "rotate_mcp"
+          confirmAction === "rotate_mcp"
               ? "重置后旧的 AGENTS_TOWER_API_KEY 将立即失效，所有已配置该密钥的 AI Agent 需更新新密钥后才能继续调用。"
               : confirmAction === "logout"
-                ? `确定移除「${user?.nickname || user?.email || token?.email || "当前账号"}」的本地与服务端凭据吗？该账号关联的 MCP 密钥也将一并失效。`
-                : `确定清空所有（${store.items.length} 个）账号的本地与服务端凭据吗？该操作不可恢复。`
+                ? `解除「${user?.nickname || user?.email || token?.email || "当前账号"}」的绑定？该账号关联的 MCP 密钥也将一并失效。`
+                : `解除所有（${store.items.length} 个）Tower 账号的绑定？该操作不可恢复。`
         }
         confirmLabel={
-          confirmAction === "refresh"
-            ? "确认刷新"
-            : confirmAction === "rotate_mcp"
+          confirmAction === "rotate_mcp"
               ? "确认重置"
               : confirmAction === "logout"
-                ? "确认登出"
-                : "确认清空"
+                ? "解除绑定"
+                : "解除全部绑定"
         }
-        confirmVariant={confirmAction === "refresh" ? "default" : "destructive"}
+        confirmVariant="destructive"
         disabled={loading}
         onConfirm={() => {
-          if (confirmAction === "refresh") handleRefresh();
-          else if (confirmAction === "rotate_mcp") handleRotateMCPKey();
-          else if (confirmAction === "logout") handleLogoutCurrent();
-          else handleClearAll();
+          if (confirmAction === "rotate_mcp") handleRotateMCPKey();
+          else if (confirmAction === "logout") unlinkAccounts([creds]);
+          else unlinkAccounts(store.items);
         }}
       />
 
@@ -1578,7 +1120,7 @@ export default function App() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{loginTarget ? "连接 Tower 网页" : "添加 Tower 账号"}</DialogTitle>
-            <DialogDescription>{loginTarget ? "使用对应的 Tower 账号登录。" : "使用微信或邮箱登录，同时连接 Tower 网页和 API。"}</DialogDescription>
+            <DialogDescription>{loginTarget ? "使用对应的 Tower 账号登录。" : "使用微信扫码或邮箱密码登录 Tower。"}</DialogDescription>
           </DialogHeader>
           {grant ? (
             <form className="space-y-3" onSubmit={continueGrant}>

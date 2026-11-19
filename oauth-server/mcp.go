@@ -608,7 +608,7 @@ func buildToolSchema(spec mcpToolSpec) map[string]any {
 }
 
 func totalMCPToolCount() int {
-	return len(towerMCPTools) + 6
+	return len(towerMCPTools) + 7
 }
 
 func isSafeTodoStateDelete(apiPath string) bool {
@@ -657,21 +657,38 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。team_id、project_id、member_id 可选。",
+			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"keyword":    map[string]any{"type": "string", "description": "搜索关键词"},
-					"member_id":  map[string]any{"type": "string", "description": "可选成员 GUID"},
-					"project_id": map[string]any{"type": "string", "description": "可选项目 GUID"},
-					"team_id":    map[string]any{"type": "string", "description": "可选团队 GUID 或数字团队编号；不传时搜索已加入的团队"},
+					"keyword": map[string]any{"type": "string", "description": "搜索关键词"},
+				},
+				"required": []string{"keyword"},
+			},
+			"annotations": map[string]any{
+				"title":           "搜索任务",
+				"readOnlyHint":    true,
+				"destructiveHint": false,
+				"idempotentHint":  true,
+				"openWorldHint":   false,
+			},
+		}, map[string]any{
+			"name":        "advanced_search_todos",
+			"description": "按关键词聚合搜索任务（受限于 Tower Open API，按成员/项目/团队范围拉取后本地过滤，内置频率、并发与上游请求数限流）",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"keyword":    map[string]any{"type": "string", "description": "搜索关键词（匹配任务标题、描述或编号）"},
+					"member_id":  map[string]any{"type": "string", "description": "可选成员 ID（优先使用，速度最快）"},
+					"project_id": map[string]any{"type": "string", "description": "可选项目 ID（扫描该项目下的任务清单）"},
+					"team_id":    map[string]any{"type": "string", "description": "可选团队 ID（扫描该团队前 5 个项目；不传任何 ID 时默认搜索当前账号跨团队待办）"},
 					"status":     map[string]any{"type": "string", "description": "任务状态：all（默认）/ uncompleted / completed"},
 					"limit":      map[string]any{"type": "integer", "description": "最多返回条数（默认 20，最大 50）"},
 				},
 				"required": []string{"keyword"},
 			},
 			"annotations": map[string]any{
-				"title":           "搜索任务",
+				"title":           "高级搜索任务",
 				"readOnlyHint":    true,
 				"destructiveHint": false,
 				"idempotentHint":  true,
@@ -959,7 +976,7 @@ func dispatchMCPMethod(
 				"name":    "AgentsTower",
 				"version": "1.0.0",
 			},
-			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+			"instructions": "按关键词搜索任务请用 search_todos。指定成员、项目、团队或完成状态时请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 		})
 
 	case "ping":
@@ -1048,6 +1065,9 @@ func executeMCPTool(
 ) (string, bool) {
 	if name == "my_todo_overview" {
 		return executeMyTodoOverview(ctx, cfg, mcpKey, acc, args)
+	}
+	if name == "advanced_search_todos" {
+		return executeAdvancedSearchTodos(ctx, cfg, mcpKey, acc, args)
 	}
 	if name == "search_todos" {
 		return executeSearchTodos(ctx, cfg, mcpKey, acc, args)

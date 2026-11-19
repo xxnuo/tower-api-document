@@ -101,20 +101,27 @@ func requireAdmin(cfg Config, next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
-func userLoginResults(cfg Config, userID int64) []LoginResult {
+type boundAccount struct {
+	AccountID    string    `json:"account_id"`
+	User         *UserInfo `json:"user"`
+	MCPAPIKey    string    `json:"mcp_api_key"`
+	WebConnected bool      `json:"web_connected"`
+}
+
+func userLoginResults(cfg Config, userID int64) []boundAccount {
 	if cfg.Store == nil {
-		return []LoginResult{}
+		return []boundAccount{}
 	}
 	stored, err := cfg.Store.ListAccountsByUser(userID)
 	if err != nil {
-		return []LoginResult{}
+		return []boundAccount{}
 	}
-	out := make([]LoginResult, 0, len(stored))
+	out := make([]boundAccount, 0, len(stored))
 	for i := range stored {
-		item := stored[i].ToLoginResult()
-		if sess, sessErr := cfg.Store.GetWebSession(stored[i].ID); sessErr == nil {
+		acc := stored[i]
+		item := boundAccount{AccountID: acc.ID, User: acc.ToLoginResult().User, MCPAPIKey: acc.MCPAPIKey}
+		if _, sessErr := cfg.Store.GetWebSession(stored[i].ID); sessErr == nil {
 			item.WebConnected = true
-			item.WebEmail = sess.Email
 		}
 		out = append(out, item)
 	}

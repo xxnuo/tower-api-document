@@ -22,7 +22,7 @@ function siteIndexes() {
       ];
       const llms = renderLlmsTxt(new Map([["/", links]]), {
         name: "AgentsTower",
-        summary: "管理 Tower 账号和 OAuth 凭据，调试 Tower API 与 MCP，并为 Agent 生成接入配置。",
+        summary: "绑定 Tower 账号，为 Agent 配置和测试 MCP 工具。",
         sectionTitles: { "/": "入口" },
       });
       this.emitFile({ type: "asset", fileName: "llms.txt", source: llms });
