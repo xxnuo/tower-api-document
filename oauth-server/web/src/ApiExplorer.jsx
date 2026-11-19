@@ -457,8 +457,11 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
                         </Badge>
                       )}
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-                      {item.path}
+                    <div className="mt-1 flex items-center gap-1.5">
+                      {(item.tags ?? ["API"]).map(tag => (
+                        <Badge key={tag} variant="secondary" className="shrink-0 font-mono text-[10px]">{tag}</Badge>
+                      ))}
+                      <span className="truncate font-mono text-[11px] text-muted-foreground" title={item.path}>{item.path}</span>
                     </div>
                   </button>
                 );

@@ -92,6 +92,7 @@ export const TOWER_API_CATALOG = [
   // 任务
   {
     id: "todos-search",
+    tags: ["Web"],
     group: "任务",
     name: "搜索任务（网页）",
     method: "GET",
@@ -100,6 +101,7 @@ export const TOWER_API_CATALOG = [
   },
   {
     id: "todos-advanced-search", group: "任务", name: "高级搜索任务", method: "GET",
+    tags: ["API", "Multi-API"],
     path: "/api/v1/todos/advanced_search",
     defaultQuery: "keyword=&team_id=&project_id=&member_id=&status=all&limit=20",
   },
