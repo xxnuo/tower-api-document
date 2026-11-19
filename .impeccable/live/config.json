@@ -1,6 +1,6 @@
 {
   "files": [
-    "oauth-server/web/index.html",
+    "server/web/index.html",
     "docs/index.html"
   ],
   "insertBefore": "</body>",

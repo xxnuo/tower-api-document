@@ -22,7 +22,7 @@ AgentsTower 及其配套的 Tower API 文档站提供团队内部自托管的 To
 ## Operating Context
 
 - **部署与运行环境**：面向受信团队内部自托管运行（通过 `make run`、`make dev` 或 Docker Compose 监听默认 `:8888` 端口，支持通过 `SITE_BASE_URL` 与 `MCP_BASE_URL` 适配反向代理公开地址）。
-- **双界面协同**：核心操作界面为 `oauth-server/web`（AgentsTower 管理与调试控制台），配套参考界面为 `docs/`（Docsify 静态 Tower API 文档站）。
+- **双界面协同**：核心操作界面为 `server/web`（AgentsTower 管理与调试控制台），配套参考界面为 `docs/`（Docsify 静态 Tower API 文档站）。
 - **端侧场景权重**：以桌面端高频调试、参数编排与凭据管理为优先场景，同时完整适配移动端日常授权、查看与管理操作。
 - **关键衔接动作**：支持 OOB 手动粘贴授权码（`urn:ietf:wg:oauth:2.0:oob`）与 `/oauth2/callback` 自动回调两种授权链路，以及一键复制 MCP 客户端 JSON 配置片段（`AGENTS_TOWER_API_KEY`）。
 
@@ -32,7 +32,7 @@ AgentsTower 及其配套的 Tower API 文档站提供团队内部自托管的 To
 - **安全准入与防误删边界**：注册准入支持 `open`（开放）、`invite`（凭 `INVITE_CODE` 邀请码）与 `closed`（关闭公开注册）动态切换；MCP 硬删除受全局 `ALLOW_MCP_DELETE` 控制（默认 `false`，仅放行取消完成状态与移除负责人等可逆操作），界面端高危工具调用需显式二次确认。
 - **凭据安全展示**：前端展示与调试输出中的敏感令牌及密钥默认脱敏（`maskToken` / `maskSecretsInText`），仅在用户显式复制时写入剪贴板；界面实时提示令牌剩余有效期并支持刷新。
 - **双协议调试能力**：`ApiExplorer` 基于 `towerApiCatalog.js` 提供 REST 接口参数自动拉取与调试；`McpExplorer` 提供 JSON-RPC Streamable HTTP 会话连接、延迟检测、读写/高危筛选以及表单与原始 JSON 双模式调用。
-- **技术栈与交付约束**：后端为 Go 1.24 + SQLite 单文件数据库，生产构建将 `oauth-server/web/dist`（React 19、Vite 6、Tailwind CSS 4，`pnpm` 管理依赖，支持明暗主题切换）内嵌为单一可执行文件；`docs/` 保持轻量静态文档形态。
+- **技术栈与交付约束**：后端为 Go 1.24 + SQLite 单文件数据库，生产构建将 `server/web/dist`（React 19、Vite 6、Tailwind CSS 4，`pnpm` 管理依赖，支持明暗主题切换）内嵌为单一可执行文件；`docs/` 保持轻量静态文档形态。
 - **明确未定事项**：暂不引入公网多租户计费、外部商业化套餐或跨组织公开市场机制。
 
 ## Brand Commitments
@@ -42,7 +42,7 @@ AgentsTower 及其配套的 Tower API 文档站提供团队内部自托管的 To
 
 ## Evidence on Hand
 
-- **已实现的核心界面与目录数据**：`oauth-server/web/src/` 下的登录注册页（`AuthScreen.jsx`）、凭据管理主视图（`App.jsx`）、REST 调试台（`ApiExplorer.jsx`）、MCP 调试台（`McpExplorer.jsx`）、管理后台（`AdminPanel.jsx`）及接口目录（`towerApiCatalog.js`）。
+- **已实现的核心界面与目录数据**：`server/web/src/` 下的登录注册页（`AuthScreen.jsx`）、凭据管理主视图（`App.jsx`）、REST 调试台（`ApiExplorer.jsx`）、MCP 调试台（`McpExplorer.jsx`）、管理后台（`AdminPanel.jsx`）及接口目录（`towerApiCatalog.js`）。
 - **配套文档与既有素材**：`docs/gettingstarted.md`、`docs/_sidebar.md`、`docs/api/*.md` 全量 v1 接口说明，以及 `docs/TowerLogo.png`、`docs/media/logo-apidocs@2x.png` 与授权流程截图（`docs/media/`）。
 - **严禁虚构的空白项**：不存在公网客户证言、外部企业案例、SLA 承诺、第三方合规认证徽章或商业定价数据，任何后续界面不得捏造此类背书。
 

@@ -27,7 +27,7 @@
 首个在网页注册的账户默认自动成为系统管理员（`admin`）；后续注册成员默认为普通用户（`user`）。也可在服务端通过命令行手动授权：
 
 ```bash
-cd oauth-server
+cd server
 # 查看所有用户及角色
 go run . user list
 # 授权指定用户为管理员（或使用编译后的 ./bin/agents-tower）
@@ -45,7 +45,7 @@ go run . user reset-password <username> <new-password>
 - 部署主机为 `xxnuo@kompiler.lan`，由当前用户通过 Podman Compose 管理。
 - 服务入口为 [http://kompiler.lan:18888](http://kompiler.lan:18888)，MCP 路径为 `/mcp`。宿主机端口 `18888` 映射到容器端口 `8888`。
 - 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.0`。
-- 远端 `.env` 从本机 `oauth-server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/agents-tower.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
+- 远端 `.env` 从本机 `server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/agents-tower.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
 
 ```bash
 ssh xxnuo@kompiler.lan
@@ -64,7 +64,7 @@ curl -fsS http://kompiler.lan:18888/api/healthz
 docker compose up -d
 
 # 方式二：单独构建运行
-cd oauth-server && docker build -t agents-tower .
+cd server && docker build -t agents-tower .
 docker run -d --name agents-tower -p 8888:8888 -v "$(pwd)/data:/app/data" --env-file .env agents-tower
 ```
 
