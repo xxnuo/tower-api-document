@@ -171,6 +171,21 @@ func OpenStore(dbPath string) (*Store, error) {
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);
+	CREATE TABLE IF NOT EXISTS mcp_log_opt_ins (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE
+	);
+	CREATE TABLE IF NOT EXISTS mcp_operation_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL,
+		username TEXT NOT NULL,
+		tower_account TEXT NOT NULL,
+		tool TEXT NOT NULL,
+		started_at INTEGER NOT NULL,
+		duration_ms INTEGER NOT NULL,
+		success BOOLEAN NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_mcp_operation_logs_user ON mcp_operation_logs(user_id, id);
 	CREATE TABLE IF NOT EXISTS web_sessions (
 		account_id TEXT PRIMARY KEY,
 		cookies TEXT NOT NULL,

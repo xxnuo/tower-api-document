@@ -873,6 +873,14 @@ func handleMCP(cfg Config) http.HandlerFunc {
 	}
 	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if call, ok := req.GetParams().(*mcp.CallToolParamsRaw); method == "tools/call" && ok && call != nil {
+				name := call.Name
+				if _, known := resultProfiles[name]; !known {
+					name = "未知工具"
+				}
+				acc := ctx.Value(mcpAccountKey{}).(*StoredAccount)
+				return cfg.Store.auditMCPCall(acc, name, func() (mcp.Result, error) { return next(ctx, method, req) })
+			}
 			result, err := next(ctx, method, req)
 			if list, ok := result.(*mcp.ListToolsResult); ok && err == nil {
 				acc := ctx.Value(mcpAccountKey{}).(*StoredAccount)

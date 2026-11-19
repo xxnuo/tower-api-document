@@ -5,6 +5,7 @@ import {
   CopyIcon,
   CpuIcon,
   DesktopIcon,
+  ListBulletsIcon,
   KeyIcon,
   LockKeyIcon,
   MoonIcon,
@@ -18,6 +19,7 @@ import AdminPanel from "./AdminPanel.jsx";
 import ApiExplorer from "./ApiExplorer.jsx";
 import AuthScreen, { removeQuickLoginEntry, saveQuickLoginEntry } from "./AuthScreen.jsx";
 import McpExplorer from "./McpExplorer.jsx";
+import McpLogs from "./McpLogs.jsx";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,7 +58,7 @@ const THEME_STORAGE_KEY = "tower_oauth_theme_v1";
 
 function readTabFromHash() {
   const tab = window.location.hash.slice(1);
-  return ["mcp", "explorer", "admin"].includes(tab) ? tab : "creds";
+  return ["mcp", "logs", "explorer", "admin"].includes(tab) ? tab : "creds";
 }
 
 function navigateToTab(tab) {
@@ -683,6 +685,7 @@ export default function App() {
   const navItems = [
     { id: "creds", label: "账号与接入", icon: KeyIcon, badge: store.items.length > 0 ? `${store.items.length}` : null },
     { id: "mcp", label: "MCP 调试", icon: CpuIcon, badge: mcpKey ? "就绪" : null },
+    { id: "logs", label: "MCP 操作日志", icon: ListBulletsIcon },
     ...(authUser.role === "admin" ? [
       { id: "explorer", label: "API 调试", icon: TerminalWindowIcon },
       { id: "admin", label: "成员管理", icon: UsersIcon },
@@ -956,6 +959,8 @@ export default function App() {
       <main className="flex-1 min-h-0 min-w-0 flex flex-col">
         {activeTab === "admin" && authUser.role === "admin" ? (
           <AdminPanel currentUser={authUser} />
+        ) : activeTab === "logs" ? (
+          <McpLogs key={authUser.id + authUser.role} admin={authUser.role === "admin"} />
         ) : activeTab === "mcp" ? (
           <McpExplorer
             mcpKey={mcpKey}
