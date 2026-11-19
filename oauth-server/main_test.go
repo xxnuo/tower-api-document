@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
+	"encoding/xml"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -141,6 +143,45 @@ func TestPublicBaseURLs(t *testing.T) {
 	t.Setenv("MCP_BASE_URL", "https://user:secret@mcp.example")
 	if _, err := loadConfigFromEnv(); err == nil || !strings.Contains(err.Error(), "MCP_BASE_URL") {
 		t.Fatalf("expected invalid MCP_BASE_URL error, got %v", err)
+	}
+}
+
+func TestManagementSiteIndexes(t *testing.T) {
+	for _, site := range []string{"https://manage.example", ""} {
+		cfg := testConfig("https://tower.im")
+		cfg.SiteBaseURL = site
+		cfg.MCPBaseURL = "https://mcp.example"
+		cfg.DevProxyURL = "http://unused.example"
+		mux := newMux(cfg)
+		wantSite := cmp.Or(site, "https://proxy.example")
+		get := func(path, contentType string) string {
+			t.Helper()
+			req := httptest.NewRequest(http.MethodGet, "http://proxy.example"+path, nil)
+			req.Header.Set("X-Forwarded-Proto", "https")
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), contentType) {
+				t.Fatalf("%s: status %d, type %q", path, rec.Code, rec.Header().Get("Content-Type"))
+			}
+			return rec.Body.String()
+		}
+
+		var sitemap struct {
+			URLs []string `xml:"url>loc"`
+		}
+		if err := xml.Unmarshal([]byte(get("/sitemap.xml", "application/xml")), &sitemap); err != nil {
+			t.Fatal(err)
+		}
+		if len(sitemap.URLs) != 1 || sitemap.URLs[0] != wantSite+"/" {
+			t.Fatalf("unexpected sitemap: %v", sitemap.URLs)
+		}
+		llms := get("/llms.txt", "text/plain")
+		if !strings.HasPrefix(llms, "# AgentsTower\n") || !strings.Contains(llms, "("+wantSite+"/api/skill.md)") {
+			t.Fatalf("unexpected llms.txt: %s", llms)
+		}
+		if skill := get("/api/skill.md", "text/markdown"); !strings.Contains(skill, "https://mcp.example/mcp") {
+			t.Fatal("skill does not advertise the configured MCP endpoint")
+		}
 	}
 }
 

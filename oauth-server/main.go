@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"io"
 	"io/fs"
@@ -165,6 +167,36 @@ func randomState() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+func requestBaseURL(req *http.Request) string {
+	scheme := "http"
+	if req.TLS != nil || strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := cmp.Or(strings.TrimSpace(req.Host), "localhost:8888")
+	return (&url.URL{Scheme: scheme, Host: host}).String()
+}
+
+func serveSiteIndex(cfg Config, file, contentType string) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		content, err := webDistFS.ReadFile("web/dist/" + file)
+		if err != nil {
+			http.Error(writer, "site index unavailable", http.StatusInternalServerError)
+			return
+		}
+		site := cfg.SiteBaseURL
+		if site == "" {
+			site = requestBaseURL(req)
+		}
+		if file == "sitemap.xml" {
+			var escaped bytes.Buffer
+			_ = xml.EscapeText(&escaped, []byte(site))
+			site = escaped.String()
+		}
+		writer.Header().Set("Content-Type", contentType+"; charset=utf-8")
+		_, _ = writer.Write(bytes.ReplaceAll(content, []byte("https://agents-tower.invalid"), []byte(site)))
+	}
+}
+
 func newMux(cfg Config) http.Handler {
 	if cfg.HTTPClient == nil {
 		cfg.HTTPClient = &http.Client{Timeout: 15 * time.Second}
@@ -179,6 +211,8 @@ func newMux(cfg Config) http.Handler {
 	mcpBaseURL := cmp.Or(cfg.MCPBaseURL, cfg.SiteBaseURL)
 	mcpURL := mcpBaseURL + "/mcp"
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /sitemap.xml", serveSiteIndex(cfg, "sitemap.xml", "application/xml"))
+	mux.HandleFunc("GET /llms.txt", serveSiteIndex(cfg, "llms.txt", "text/plain"))
 	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower"})
 	})
@@ -197,15 +231,7 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/skill.md", func(writer http.ResponseWriter, req *http.Request) {
 		skillMCPURL := mcpURL
 		if mcpBaseURL == "" {
-			scheme := "http"
-			if req.TLS != nil || strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
-				scheme = "https"
-			}
-			host := strings.TrimSpace(req.Host)
-			if host == "" {
-				host = "localhost:8888"
-			}
-			skillMCPURL = scheme + "://" + host + mcpURL
+			skillMCPURL = requestBaseURL(req) + mcpURL
 		}
 		content := strings.ReplaceAll(embeddedSkillMD, "{{MCP_URL}}", skillMCPURL)
 		writer.Header().Set("Content-Type", "text/markdown; charset=utf-8")
