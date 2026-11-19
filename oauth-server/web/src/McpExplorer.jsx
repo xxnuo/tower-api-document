@@ -24,7 +24,7 @@ function tryParseJSON(text) {
   }
 }
 
-export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
+export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCreds }) {
   const [manualKey, setManualKey] = useState("");
   const [tools, setTools] = useState([]);
   const [serverMeta, setServerMeta] = useState(null);
@@ -72,7 +72,7 @@ export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
       if (sid) headers["Mcp-Session-Id"] = sid;
 
       const started = performance.now();
-      const res = await fetch("/mcp", {
+      const res = await fetch(mcpServerURL, {
         method: "POST",
         headers,
         body: JSON.stringify(reqEnvelope),
@@ -85,7 +85,7 @@ export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
       }
       return { reqEnvelope, respEnvelope, result: respEnvelope.result, durationMs, sessionId };
     },
-    [effectiveKey, serverMeta?.sessionId]
+    [effectiveKey, mcpServerURL, serverMeta?.sessionId]
   );
 
   const harvestFromToolOutput = useCallback((toolName, parsedBody) => {
@@ -149,7 +149,7 @@ export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
         },
         ""
       );
-      fetch("/mcp", {
+      fetch(mcpServerURL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,7 +180,7 @@ export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
     } finally {
       setConnecting(false);
     }
-  }, [effectiveKey]);
+  }, [effectiveKey, mcpServerURL]);
 
   useEffect(() => {
     setParamOptions({});
@@ -447,15 +447,14 @@ export default function McpExplorer({ mcpKey, accountLabel, onGoCreds }) {
   }, [activeTool, formValues, rawArgsText, inputMode, schemaEntries]);
 
   const mcpCurlCommand = useMemo(() => {
-    const url = `${window.location.origin}/mcp`;
     const bodyStr = JSON.stringify(previewPayload);
     return [
-      `curl -X POST "${url}"`,
+      `curl -X POST '${mcpServerURL.replace(/'/g, "'\\''")}'`,
       `  -H "Content-Type: application/json"`,
       `  -H "AGENTS_TOWER_API_KEY: ${effectiveKey || "<AGENTS_TOWER_API_KEY>"}"`,
       `  -d '${bodyStr.replace(/'/g, "'\\''")}'`,
     ].join(" \\\n");
-  }, [previewPayload, effectiveKey]);
+  }, [previewPayload, effectiveKey, mcpServerURL]);
 
   async function copyText(key, text) {
     await navigator.clipboard.writeText(text);

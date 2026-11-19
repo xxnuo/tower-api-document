@@ -194,12 +194,12 @@ export default function App() {
   }
 
   useEffect(() => {
-    fetch("/api/config")
+    const configRequest = fetch("/api/config")
       .then((res) => res.json())
       .then((data) => setConfig(data))
       .catch(() => {});
 
-    fetch("/api/auth/me")
+    const authRequest = fetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
         setHasUsers(Boolean(data?.has_users));
@@ -213,8 +213,8 @@ export default function App() {
           handleAuthLoaded(data);
         }
       })
-      .catch(() => {})
-      .finally(() => setAuthChecking(false));
+      .catch(() => {});
+    Promise.all([configRequest, authRequest]).finally(() => setAuthChecking(false));
   }, []);
 
   useEffect(() => {
@@ -584,7 +584,7 @@ export default function App() {
         : "";
   const secretValues = [token?.access_token, token?.refresh_token, mcpKey].filter(Boolean);
   const maskIfHidden = (text) => (showSecrets ? text : maskSecretsInText(text, secretValues));
-  const mcpServerURL = `${window.location.origin}/mcp`;
+  const mcpServerURL = new URL(config.mcp_url || "/mcp", window.location.origin).href;
   const mcpConfigSnippet = JSON.stringify(
     {
       mcpServers: {
@@ -1010,6 +1010,7 @@ export default function App() {
       ) : activeTab === "mcp" ? (
         <McpExplorer
           mcpKey={mcpKey}
+          mcpServerURL={mcpServerURL}
           accountLabel={towerAccountLabel}
           onGoCreds={() => setActiveTab("creds")}
         />

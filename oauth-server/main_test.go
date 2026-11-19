@@ -56,6 +56,9 @@ func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("TOWER_CLIENT_ID", "cid")
 	t.Setenv("TOWER_CLIENT_SECRET", "csecret")
+	t.Setenv("TOWER_REDIRECT_URI", "")
+	t.Setenv("SITE_BASE_URL", "")
+	t.Setenv("MCP_BASE_URL", "")
 
 	cfg, err := loadConfigFromEnv()
 	if err != nil {
@@ -78,6 +81,66 @@ func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
 	mux.ServeHTTP(cfgRec, cfgReq)
 	if cfgRec.Code != http.StatusOK || !strings.Contains(cfgRec.Body.String(), `"is_oob":false`) {
 		t.Fatalf("unexpected config response: %d %s", cfgRec.Code, cfgRec.Body.String())
+	}
+}
+
+func TestPublicBaseURLs(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("TOWER_CLIENT_ID", "cid")
+	t.Setenv("TOWER_CLIENT_SECRET", "csecret")
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, tc := range []struct {
+		name, site, mcp, redirect, wantMCP, wantRedirect string
+	}{
+		{"request fallback", "", "", "", "/mcp", "http://localhost:8888/oauth2/callback"},
+		{"website only", " https://site.example/ ", "", "", "https://site.example/mcp", "https://site.example/oauth2/callback"},
+		{"MCP only", "", "https://mcp.example/", "", "https://mcp.example/mcp", "http://localhost:8888/oauth2/callback"},
+		{"split hosts", "https://site.example", "https://mcp.example/tower/", "", "https://mcp.example/tower/mcp", "https://site.example/oauth2/callback"},
+		{"explicit redirect", "https://site.example", "https://mcp.example", "urn:ietf:wg:oauth:2.0:oob", "https://mcp.example/mcp", "urn:ietf:wg:oauth:2.0:oob"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SITE_BASE_URL", tc.site)
+			t.Setenv("MCP_BASE_URL", tc.mcp)
+			t.Setenv("TOWER_REDIRECT_URI", tc.redirect)
+			cfg, err := loadConfigFromEnv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Store = store
+			mux := newMux(cfg)
+			config := httptest.NewRecorder()
+			mux.ServeHTTP(config, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+			var got struct {
+				MCPURL      string `json:"mcp_url"`
+				RedirectURI string `json:"redirect_uri"`
+			}
+			if err := json.Unmarshal(config.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if config.Code != http.StatusOK || got.MCPURL != tc.wantMCP || got.RedirectURI != tc.wantRedirect {
+				t.Fatalf("unexpected config: %d %+v", config.Code, got)
+			}
+			skillReq := httptest.NewRequest(http.MethodGet, "http://proxy.example/api/skill.md", nil)
+			skillReq.Header.Set("X-Forwarded-Proto", "https")
+			skill := httptest.NewRecorder()
+			mux.ServeHTTP(skill, skillReq)
+			wantSkillURL := tc.wantMCP
+			if tc.site == "" && tc.mcp == "" {
+				wantSkillURL = "https://proxy.example/mcp"
+			}
+			if skill.Code != http.StatusOK || !strings.Contains(skill.Body.String(), `"url": "`+wantSkillURL+`"`) {
+				t.Fatalf("skill.md did not advertise %q: %d", wantSkillURL, skill.Code)
+			}
+		})
+	}
+	t.Setenv("SITE_BASE_URL", "https://site.example")
+	t.Setenv("MCP_BASE_URL", "https://user:secret@mcp.example")
+	if _, err := loadConfigFromEnv(); err == nil || !strings.Contains(err.Error(), "MCP_BASE_URL") {
+		t.Fatalf("expected invalid MCP_BASE_URL error, got %v", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -46,6 +47,8 @@ type Config struct {
 	ClientSecret string
 	RedirectURI  string
 	BaseURL      string
+	SiteBaseURL  string
+	MCPBaseURL   string
 	ListenAddr   string
 	DBPath       string
 	DevProxyURL  string
@@ -109,13 +112,35 @@ func loadConfigFromEnv() (Config, error) {
 		ClientSecret: strings.TrimSpace(os.Getenv("TOWER_CLIENT_SECRET")),
 		RedirectURI:  strings.TrimSpace(os.Getenv("TOWER_REDIRECT_URI")),
 		BaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("TOWER_BASE_URL")), "/"),
+		SiteBaseURL:  strings.TrimSpace(os.Getenv("SITE_BASE_URL")),
+		MCPBaseURL:   strings.TrimSpace(os.Getenv("MCP_BASE_URL")),
 		ListenAddr:   strings.TrimSpace(os.Getenv("LISTEN_ADDR")),
 		DBPath:       strings.TrimSpace(os.Getenv("DB_PATH")),
 		DevProxyURL:  strings.TrimRight(strings.TrimSpace(os.Getenv("VITE_DEV_URL")), "/"),
 		HTTPClient:   &http.Client{Timeout: 15 * time.Second},
 	}
+	for _, setting := range []struct {
+		name  string
+		value *string
+	}{
+		{"SITE_BASE_URL", &cfg.SiteBaseURL},
+		{"MCP_BASE_URL", &cfg.MCPBaseURL},
+	} {
+		if *setting.value == "" {
+			continue
+		}
+		u, err := url.Parse(*setting.value)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+			u.User != nil || u.ForceQuery || u.RawQuery != "" || strings.Contains(*setting.value, "#") {
+			return cfg, errors.New(setting.name + " must be a public HTTP(S) base URL")
+		}
+		if setting.name == "SITE_BASE_URL" && strings.TrimRight(u.EscapedPath(), "/") != "" {
+			return cfg, errors.New("SITE_BASE_URL must be a site origin without a path")
+		}
+		*setting.value = strings.TrimRight(u.String(), "/")
+	}
 	if cfg.RedirectURI == "" {
-		cfg.RedirectURI = "http://localhost:8888/oauth2/callback"
+		cfg.RedirectURI = cmp.Or(cfg.SiteBaseURL, "http://localhost:8888") + "/oauth2/callback"
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://tower.im"
@@ -151,6 +176,8 @@ func newMux(cfg Config) http.Handler {
 		}
 		cfg.Store = memStore
 	}
+	mcpBaseURL := cmp.Or(cfg.MCPBaseURL, cfg.SiteBaseURL)
+	mcpURL := mcpBaseURL + "/mcp"
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower"})
@@ -161,22 +188,26 @@ func newMux(cfg Config) http.Handler {
 			"service":           "AgentsTower",
 			"is_oob":            isOOB(cfg),
 			"redirect_uri":      cfg.RedirectURI,
+			"mcp_url":           mcpURL,
 			"mcp_tools":         totalMCPToolCount(),
 			"registration_mode": settings.RegistrationMode,
 			"allow_mcp_delete":  settings.AllowMCPDelete,
 		})
 	})
 	mux.HandleFunc("GET /api/skill.md", func(writer http.ResponseWriter, req *http.Request) {
-		scheme := "http"
-		if req.TLS != nil || strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
-			scheme = "https"
+		skillMCPURL := mcpURL
+		if mcpBaseURL == "" {
+			scheme := "http"
+			if req.TLS != nil || strings.EqualFold(req.Header.Get("X-Forwarded-Proto"), "https") {
+				scheme = "https"
+			}
+			host := strings.TrimSpace(req.Host)
+			if host == "" {
+				host = "localhost:8888"
+			}
+			skillMCPURL = scheme + "://" + host + mcpURL
 		}
-		host := strings.TrimSpace(req.Host)
-		if host == "" {
-			host = "localhost:8888"
-		}
-		mcpURL := scheme + "://" + host + "/mcp"
-		content := strings.ReplaceAll(embeddedSkillMD, "{{MCP_URL}}", mcpURL)
+		content := strings.ReplaceAll(embeddedSkillMD, "{{MCP_URL}}", skillMCPURL)
 		writer.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		if req.URL.Query().Get("download") == "1" {
 			writer.Header().Set("Content-Disposition", `attachment; filename="SKILL.md"`)
