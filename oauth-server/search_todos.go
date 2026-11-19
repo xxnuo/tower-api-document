@@ -400,5 +400,5 @@ func executeSearchTodos(
 		payload["items"] = compactTodoItems(items)
 	}
 	out, _ := json.Marshal(payload)
-	return string(out), status >= 400
+	return agentText(out), status >= 400
 }

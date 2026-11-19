@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HighlightedJSON, toOptions } from "./ApiExplorer.jsx";
+import { HighlightedJSON } from "./ApiExplorer.jsx";
 import { ModalDialog, SegmentedTabs, StatusBanner, UI } from "./ui.jsx";
 
 function resolveToolGroup(name) {
@@ -89,8 +89,10 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     [effectiveKey, mcpServerURL, serverMeta?.sessionId]
   );
 
-  const harvestFromToolOutput = useCallback((toolName, parsedBody) => {
-    const opts = toOptions(parsedBody);
+  const harvestFromToolOutput = useCallback((toolName, text) => {
+    const opts = Array.from(text.matchAll(/^  - ID (\S+)(?: \| (.*))?$/gm), ([, id, name]) => ({
+      id, label: (name || id).slice(0, 40),
+    }));
     if (opts.length === 0) return;
     let targetKey = "";
     if (toolName === "tower_list_teams") targetKey = "team_id";
@@ -119,8 +121,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           arguments: { ...toolArgs, page_size: 50 },
         });
         if (!result?.isError && result?.content?.[0]?.text) {
-          const parsed = tryParseJSON(result.content[0].text);
-          if (parsed.ok) harvestFromToolOutput(toolName, parsed.val);
+          harvestFromToolOutput(toolName, result.content[0].text);
         }
       } catch {
         // ignore silent option preload errors
@@ -382,8 +383,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           delete next[unavailKey];
           return next;
         });
-        const parsed = tryParseJSON(text);
-        if (parsed.ok) harvestFromToolOutput(activeTool.name, parsed.val);
+        harvestFromToolOutput(activeTool.name, text);
       }
       setCallResult({
         isError: isErr,
@@ -476,10 +476,6 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           2
         ),
       };
-    }
-    const parsed = tryParseJSON(callResult.text);
-    if (parsed.ok) {
-      return { isJSON: true, text: JSON.stringify(parsed.val, null, 2) };
     }
     return { isJSON: false, text: callResult.text };
   }, [callResult, resultView]);

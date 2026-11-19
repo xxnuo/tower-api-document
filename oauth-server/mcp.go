@@ -1360,20 +1360,19 @@ func callTowerForMCP(
 		respBytes = capJSONListBytes(respBytes, page, maxItems, localSlice)
 	}
 
-	formatted := prettyJSONOrText(respBytes)
 	if statusCode >= 400 {
-		return fmt.Sprintf("Tower API 返回错误 HTTP %d:\n%s", statusCode, formatted), true
+		return fmt.Sprintf("Tower API 返回错误 HTTP %d:\n%s", statusCode, agentText(respBytes)), true
 	}
-	if strings.TrimSpace(formatted) == "" {
+	if len(bytes.TrimSpace(respBytes)) == 0 {
 		return fmt.Sprintf("操作成功 (HTTP %d)", statusCode), false
 	}
 	if tool != "tower_raw_request" {
 		out, err := json.Marshal(compactTowerBody(respBytes, tool))
 		if err == nil {
-			return string(out), false
+			return agentText(out), false
 		}
 	}
-	return formatted, false
+	return agentText(respBytes), false
 }
 
 func doTowerHTTPWithRefresh(
@@ -1436,18 +1435,6 @@ func doTowerHTTP(
 	return resp.StatusCode, respBytes, nil
 }
 
-func prettyJSONOrText(raw []byte) string {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
-		return ""
-	}
-	var buf bytes.Buffer
-	if json.Indent(&buf, trimmed, "", "  ") == nil {
-		return buf.String()
-	}
-	return string(trimmed)
-}
-
 func extractJSONAPIDataItems(raw []byte) []map[string]any {
 	var doc struct {
 		Data []map[string]any `json:"data"`
@@ -1482,7 +1469,7 @@ func executeMyTodoOverview(
 			return "查询团队列表失败: " + err.Error(), true
 		}
 		if code >= 400 {
-			return fmt.Sprintf("查询团队列表返回 HTTP %d:\n%s", code, prettyJSONOrText(body)), true
+			return fmt.Sprintf("查询团队列表返回 HTTP %d:\n%s", code, agentText(body)), true
 		}
 		for _, item := range extractJSONAPIDataItems(body) {
 			id, _ := item["id"].(string)
@@ -1564,7 +1551,7 @@ func executeMyTodoOverview(
 		summary["total_created_uncompleted"] = totalCreated
 	}
 	out, _ := json.Marshal(summary)
-	return string(out), false
+	return agentText(out), false
 }
 
 func executeUploadFile(
@@ -1614,7 +1601,7 @@ func executeUploadFile(
 		return "获取直传签名失败: " + err.Error(), true
 	}
 	if signCode >= 400 {
-		return fmt.Sprintf("获取直传签名返回 HTTP %d:\n%s", signCode, prettyJSONOrText(signBody)), true
+		return fmt.Sprintf("获取直传签名返回 HTTP %d:\n%s", signCode, agentText(signBody)), true
 	}
 
 	var signResp struct {
@@ -1622,7 +1609,7 @@ func executeUploadFile(
 		DirectUpload map[string]string `json:"directUpload"`
 	}
 	if err := json.Unmarshal(signBody, &signResp); err != nil || signResp.GUID == "" || signResp.DirectUpload["url"] == "" {
-		return "解析直传签名响应失败: " + prettyJSONOrText(signBody), true
+		return "解析直传签名响应失败: " + agentText(signBody), true
 	}
 
 	var mpBuf bytes.Buffer
@@ -1667,7 +1654,7 @@ func executeUploadFile(
 	ossBytes, _ := io.ReadAll(io.LimitReader(ossResp.Body, 1<<20))
 	ossResp.Body.Close()
 	if ossResp.StatusCode >= 400 {
-		return fmt.Sprintf("上传文件至 OSS 返回 HTTP %d:\n%s", ossResp.StatusCode, string(ossBytes)), true
+		return fmt.Sprintf("上传文件至 OSS 返回 HTTP %d:\n%s", ossResp.StatusCode, agentText(ossBytes)), true
 	}
 
 	createPayload, _ := json.Marshal(map[string]any{"attfile_guid": signResp.GUID})
@@ -1677,7 +1664,7 @@ func executeUploadFile(
 		return "关联创建项目文件失败: " + err.Error(), true
 	}
 	if cCode >= 400 {
-		return fmt.Sprintf("关联创建项目文件返回 HTTP %d:\n%s", cCode, prettyJSONOrText(cBody)), true
+		return fmt.Sprintf("关联创建项目文件返回 HTTP %d:\n%s", cCode, agentText(cBody)), true
 	}
 
 	result, _ := json.Marshal(map[string]any{
@@ -1687,5 +1674,5 @@ func executeUploadFile(
 		"md5":          md5Hex,
 		"upload":       compactTowerBody(cBody, "tower_create_upload"),
 	})
-	return string(result), false
+	return agentText(result), false
 }

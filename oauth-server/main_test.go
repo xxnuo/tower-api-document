@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -892,7 +893,7 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	req1.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec1 := httptest.NewRecorder()
 	mux.ServeHTTP(rec1, req1)
-	if rec1.Code != http.StatusOK || !strings.Contains(rec1.Body.String(), `"truncated\"`) && !strings.Contains(rec1.Body.String(), `truncated`) {
+	if rec1.Code != http.StatusOK || !strings.Contains(rec1.Body.String(), "已截断：是") {
 		t.Fatalf("expected truncated meta in response: %d %s", rec1.Code, rec1.Body.String())
 	}
 	q1, _ := url.ParseQuery(seenQueries[0])
@@ -932,18 +933,13 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	if err := json.Unmarshal(rec4.Body.Bytes(), &pageResult); err != nil || len(pageResult.Result.Content) != 1 {
 		t.Fatal(rec4.Body.String())
 	}
-	var page struct {
-		Items []struct{ ID int }
-		Meta  struct {
-			HasMore bool `json:"has_more"`
-		}
+	resultText := pageResult.Result.Content[0].Text
+	if strings.Count(resultText, "  - ID ") != 10 || !strings.Contains(resultText, "还有下一页：是") {
+		t.Fatal(resultText)
 	}
-	if err := json.Unmarshal([]byte(pageResult.Result.Content[0].Text), &page); err != nil || len(page.Items) != 10 || !page.Meta.HasMore {
-		t.Fatal(rec4.Body.String())
-	}
-	for i, item := range page.Items {
-		if item.ID != 11+i {
-			t.Fatalf("unexpected page item %d: %d", i, item.ID)
+	for i := 11; i <= 20; i++ {
+		if !strings.Contains(resultText+"\n", "  - ID "+strconv.Itoa(i)+"\n") {
+			t.Fatal(resultText)
 		}
 	}
 }
