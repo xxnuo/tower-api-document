@@ -675,7 +675,7 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。实测任务与评论均对应各自的创建时间。",
+			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
