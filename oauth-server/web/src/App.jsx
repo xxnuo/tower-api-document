@@ -1437,83 +1437,85 @@ export default function App() {
                           </CardContent>
                         </Card>
 
-                        <details className="group rounded-lg border bg-muted/20">
-                          <summary className="flex list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                            <span>原始 OAuth 凭据详情（Access / Refresh Token、.env、curl）</span>
-                            <svg
-                              className="size-3.5 shrink-0 transition-transform group-open:rotate-180"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <polyline points="6 9 12 15 18 9" />
-                            </svg>
-                          </summary>
-                          <div className="space-y-3 border-t p-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {authUser.role === "admin" && (
+                          <details className="group rounded-lg border bg-muted/20">
+                            <summary className="flex list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+                              <span>原始 OAuth 凭据详情（Access / Refresh Token、.env、curl）</span>
+                              <svg
+                                className="size-3.5 shrink-0 transition-transform group-open:rotate-180"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <polyline points="6 9 12 15 18 9" />
+                              </svg>
+                            </summary>
+                            <div className="space-y-3 border-t p-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <CopyField
+                                  label="Access Token"
+                                  value={token.access_token}
+                                  displayValue={maskIfHidden(token.access_token)}
+                                  heightClass="h-16"
+                                />
+                                <CopyField
+                                  label="Refresh Token"
+                                  value={token.refresh_token || "(无)"}
+                                  displayValue={token.refresh_token ? maskIfHidden(token.refresh_token) : "(无)"}
+                                  heightClass="h-16"
+                                />
+                              </div>
                               <CopyField
-                                label="Access Token"
-                                value={token.access_token}
-                                displayValue={maskIfHidden(token.access_token)}
-                                heightClass="h-16"
+                                label="Authorization 请求头"
+                                value={`Bearer ${token.access_token}`}
+                                displayValue={maskIfHidden(`Bearer ${token.access_token}`)}
+                                heightClass="h-12"
                               />
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <CopyField
+                                  label=".env 变量"
+                                  value={envSnippet}
+                                  displayValue={maskIfHidden(envSnippet)}
+                                  heightClass="h-16"
+                                />
+                                <CopyField
+                                  label="curl 测试命令"
+                                  value={curlSnippet}
+                                  displayValue={maskIfHidden(curlSnippet)}
+                                  heightClass="h-16"
+                                />
+                              </div>
                               <CopyField
-                                label="Refresh Token"
-                                value={token.refresh_token || "(无)"}
-                                displayValue={token.refresh_token ? maskIfHidden(token.refresh_token) : "(无)"}
-                                heightClass="h-16"
+                                label="完整 JSON 凭据"
+                                value={fullJSON}
+                                displayValue={maskIfHidden(fullJSON)}
+                                heightClass="h-40"
                               />
-                            </div>
-                            <CopyField
-                              label="Authorization 请求头"
-                              value={`Bearer ${token.access_token}`}
-                              displayValue={maskIfHidden(`Bearer ${token.access_token}`)}
-                              heightClass="h-12"
-                            />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              <CopyField
-                                label=".env 变量"
-                                value={envSnippet}
-                                displayValue={maskIfHidden(envSnippet)}
-                                heightClass="h-16"
-                              />
-                              <CopyField
-                                label="curl 测试命令"
-                                value={curlSnippet}
-                                displayValue={maskIfHidden(curlSnippet)}
-                                heightClass="h-16"
-                              />
-                            </div>
-                            <CopyField
-                              label="完整 JSON 凭据"
-                              value={fullJSON}
-                              displayValue={maskIfHidden(fullJSON)}
-                              heightClass="h-40"
-                            />
-                            <div className="rounded-lg border bg-card px-3.5 py-2.5 text-xs">
-                              <div className="font-medium">官方 API 文档</div>
-                              <div className="mt-1 flex flex-col gap-1 font-mono text-[11px]">
-                                <a
-                                  href="https://docs.tower.im/"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                >
-                                  https://docs.tower.im/
-                                </a>
-                                <a
-                                  href="https://github.com/mycolorway/tower-api-document"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                                >
-                                  https://github.com/mycolorway/tower-api-document
-                                </a>
+                              <div className="rounded-lg border bg-card px-3.5 py-2.5 text-xs">
+                                <div className="font-medium">官方 API 文档</div>
+                                <div className="mt-1 flex flex-col gap-1 font-mono text-[11px]">
+                                  <a
+                                    href="https://docs.tower.im/"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                  >
+                                    https://docs.tower.im/
+                                  </a>
+                                  <a
+                                    href="https://github.com/mycolorway/tower-api-document"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                  >
+                                    https://github.com/mycolorway/tower-api-document
+                                  </a>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </details>
+                          </details>
+                        )}
                       </div>
                     ) : (
                       !awaitingCode &&
