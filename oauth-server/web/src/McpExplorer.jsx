@@ -17,6 +17,33 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
 
+const STATELESS_PROTOCOL = "2026-07-28";
+const LEGACY_PROTOCOL = "2025-11-25";
+const CLIENT_INFO = { name: "AgentsTower-WebInspector", version: "1.0.0" };
+
+function buildRPCRequest(id, method, params, { protocolVersion, sessionId } = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+  };
+  if (protocolVersion) headers["Mcp-Protocol-Version"] = protocolVersion;
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
+  if (protocolVersion === STATELESS_PROTOCOL) {
+    headers["Mcp-Method"] = method;
+    if (params?.name) headers["Mcp-Name"] = params.name;
+    params = {
+      ...params,
+      _meta: {
+        "io.modelcontextprotocol/protocolVersion": protocolVersion,
+        "io.modelcontextprotocol/clientInfo": CLIENT_INFO,
+        "io.modelcontextprotocol/clientCapabilities": {},
+      },
+    };
+  }
+  const envelope = { jsonrpc: "2.0", ...(id !== undefined ? { id } : {}), method, ...(params !== undefined ? { params } : {}) };
+  return { headers, envelope };
+}
+
 function ToolBadges({ tool }) {
   const source = tool._meta?.["agents-tower/source"];
   const tags = tool._meta?.["agents-tower/tags"] ?? [];
@@ -88,21 +115,10 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
   const keyTag = effectiveKey ? effectiveKey.slice(0, 14) : "none";
 
   const sendRPC = useCallback(
-    async (method, params, sessionIdOverride) => {
-      const id = rpcIdRef.current++;
-      const reqEnvelope = {
-        jsonrpc: "2.0",
-        id,
-        method,
-        ...(params !== undefined ? { params } : {}),
-      };
-      const headers = {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-        AGENTS_TOWER_API_KEY: effectiveKey,
-      };
-      const sid = sessionIdOverride || serverMeta?.sessionId;
-      if (sid) headers["Mcp-Session-Id"] = sid;
+    async (method, params, connection = serverMeta || {}, notification = false) => {
+      const id = notification ? undefined : rpcIdRef.current++;
+      const { headers, envelope: reqEnvelope } = buildRPCRequest(id, method, params, connection);
+      headers.AGENTS_TOWER_API_KEY = effectiveKey;
 
       const started = performance.now();
       const res = await fetch(mcpServerURL, {
@@ -111,14 +127,16 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
         body: JSON.stringify(reqEnvelope),
       });
       const durationMs = Math.round(performance.now() - started);
-      const sessionId = res.headers.get("Mcp-Session-Id") || sid || "";
-      const respEnvelope = await res.json();
-      if (!res.ok || respEnvelope.error) {
-        throw new Error(respEnvelope.error?.message || `HTTP ${res.status}`);
+      const sessionId = res.headers.get("Mcp-Session-Id") || connection.sessionId || "";
+      if (notification && res.ok) return;
+      const respEnvelope = await res.json().catch(() => null);
+      if (!res.ok || respEnvelope?.error) {
+        throw new Error(respEnvelope?.error?.message || `HTTP ${res.status}`);
       }
+      if (!respEnvelope) throw new Error("MCP 服务返回了无效的 JSON 响应");
       return { reqEnvelope, respEnvelope, result: respEnvelope.result, durationMs, sessionId };
     },
-    [effectiveKey, mcpServerURL, serverMeta?.sessionId]
+    [effectiveKey, mcpServerURL, serverMeta]
   );
 
   const harvestFromToolOutput = useCallback((toolName, opts) => {
@@ -179,34 +197,31 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     setConnecting(true);
     setConnectError("");
     try {
-      const initOut = await sendRPC(
-        "initialize",
-        {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "AgentsTower-WebInspector", version: "1.0.0" },
-        },
-        ""
-      );
-      fetch(mcpServerURL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          AGENTS_TOWER_API_KEY: effectiveKey,
-          ...(initOut.sessionId ? { "Mcp-Session-Id": initOut.sessionId } : {}),
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
-      }).catch(() => {});
+      const discovery = await sendRPC("server/discover", {}, { protocolVersion: STATELESS_PROTOCOL })
+        .catch(() => null);
+      const modern = discovery?.result?.supportedVersions?.includes(STATELESS_PROTOCOL);
+      const handshake = modern ? discovery : await sendRPC("initialize", {
+        protocolVersion: LEGACY_PROTOCOL,
+        capabilities: {},
+        clientInfo: CLIENT_INFO,
+      }, {});
+      const { result, sessionId, durationMs } = handshake;
+      const protocolVersion = modern ? STATELESS_PROTOCOL : result?.protocolVersion;
+      const serverInfo = modern ? result._meta?.["io.modelcontextprotocol/serverInfo"] : result?.serverInfo;
+      if (!protocolVersion || !serverInfo?.name || !serverInfo.version) {
+        throw new Error("MCP 服务未返回完整的版本信息");
+      }
+      const connection = { protocolVersion, sessionId };
+      if (!modern) await sendRPC("notifications/initialized", undefined, connection, true);
 
-      const listOut = await sendRPC("tools/list", {}, initOut.sessionId);
+      const listOut = await sendRPC("tools/list", {}, connection);
       const loadedTools = listOut.result?.tools || [];
       setServerMeta({
-        name: initOut.result?.serverInfo?.name || "AgentsTower",
-        version: initOut.result?.serverInfo?.version || "1.0.0",
-        protocolVersion: initOut.result?.protocolVersion || "2025-03-26",
-        instructions: initOut.result?.instructions || "",
-        sessionId: initOut.sessionId,
-        handshakeMs: initOut.durationMs,
+        ...connection,
+        name: serverInfo.name,
+        version: serverInfo.version,
+        instructions: result.instructions || "",
+        handshakeMs: durationMs,
       });
       setTools(loadedTools);
       if (loadedTools.length > 0 && !loadedTools.some((t) => t.name === selectedName)) {
@@ -461,43 +476,38 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     executeToolCall(argsObj);
   }
 
-  async function handlePing() {
+  async function handleConnectionCheck() {
     if (!effectiveKey) return;
     try {
-      const out = await sendRPC("ping");
+      const out = await sendRPC(serverMeta?.protocolVersion === STATELESS_PROTOCOL ? "server/discover" : "ping");
       setPingLatency(out.durationMs);
     } catch (err) {
       setConnectError(err.message);
     }
   }
 
-  const previewPayload = useMemo(() => {
+  const previewRequest = useMemo(() => {
     let args = {};
     try {
       args = buildArgumentsObject();
     } catch {
       args = inputMode === "json" ? rawArgsText : formValues;
     }
-    return {
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: activeTool?.name || "",
-        arguments: args,
-      },
-    };
-  }, [activeTool, formValues, rawArgsText, inputMode, schemaEntries]);
+    return buildRPCRequest(1, "tools/call", {
+      name: activeTool?.name || "",
+      arguments: args,
+    }, serverMeta || {});
+  }, [activeTool, formValues, rawArgsText, inputMode, schemaEntries, serverMeta]);
 
   const mcpCurlCommand = useMemo(() => {
-    const bodyStr = JSON.stringify(previewPayload);
+    const shellQuote = (value) => `'${value.replace(/'/g, "'\\''")}'`;
+    const headers = { ...previewRequest.headers, AGENTS_TOWER_API_KEY: effectiveKey || "<AGENTS_TOWER_API_KEY>" };
     return [
-      `curl -X POST '${mcpServerURL.replace(/'/g, "'\\''")}'`,
-      `  -H "Content-Type: application/json"`,
-      `  -H "AGENTS_TOWER_API_KEY: ${effectiveKey || "<AGENTS_TOWER_API_KEY>"}"`,
-      `  -d '${bodyStr.replace(/'/g, "'\\''")}'`,
+      `curl -X POST ${shellQuote(mcpServerURL)}`,
+      ...Object.entries(headers).map(([name, value]) => `  -H ${shellQuote(`${name}: ${value}`)}`),
+      `  -d ${shellQuote(JSON.stringify(previewRequest.envelope))}`,
     ].join(" \\\n");
-  }, [previewPayload, effectiveKey, mcpServerURL]);
+  }, [previewRequest, effectiveKey, mcpServerURL]);
 
   async function copyText(key, text) {
     await navigator.clipboard.writeText(text);
@@ -636,20 +646,20 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 <Badge variant="outline" className={serverMeta ? TONE_BADGE.success : TONE_BADGE.warning}>
                   <span className={`size-1.5 rounded-full ${serverMeta ? "bg-emerald-500" : "bg-amber-500"}`} />
                   {serverMeta
-                    ? `${serverMeta.name} v${serverMeta.version} · MCP ${serverMeta.protocolVersion}`
+                    ? `${serverMeta.name} v${serverMeta.version} · MCP 协议 ${serverMeta.protocolVersion}`
                     : "MCP 未连接"}
                 </Badge>
                 {mcpKey && <Badge variant="secondary">绑定账号：{accountLabel}</Badge>}
                 {pingLatency !== null && (
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                    ping: {pingLatency} ms
+                    延迟：{pingLatency} ms
                   </span>
                 )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" size="sm" disabled={!effectiveKey || connecting} onClick={handlePing}>
-                  Ping 检测
+                <Button type="button" variant="outline" size="sm" disabled={!effectiveKey || connecting} onClick={handleConnectionCheck}>
+                  连通性检测
                 </Button>
                 <Button type="button" variant="outline" size="sm" disabled={!effectiveKey || connecting} onClick={connectAndLoadTools}>
                   {connecting ? "握手中..." : "重新握手"}
@@ -889,7 +899,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => copyText("rpc", JSON.stringify(previewPayload, null, 2))}
+                  onClick={() => copyText("rpc", JSON.stringify(previewRequest.envelope, null, 2))}
                 >
                   {copiedKey === "rpc" ? <CheckIcon /> : <CopyIcon />}
                   {copiedKey === "rpc" ? "已复制 JSON-RPC" : "复制 JSON-RPC"}

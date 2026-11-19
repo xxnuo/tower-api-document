@@ -702,7 +702,8 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	initReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	initRec := httptest.NewRecorder()
 	mux.ServeHTTP(initRec, initReq)
-	if initRec.Code != http.StatusOK || !strings.Contains(initRec.Body.String(), `"AgentsTower"`) {
+	if initRec.Code != http.StatusOK || !strings.Contains(initRec.Body.String(), `"AgentsTower"`) ||
+		!strings.Contains(initRec.Body.String(), `"protocolVersion":"2025-03-26"`) {
 		t.Fatalf("initialize failed: %d %s", initRec.Code, initRec.Body.String())
 	}
 	if !refreshed {
@@ -759,6 +760,9 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.Close()
+	if got := session.InitializeResult().ProtocolVersion; got != "2026-07-28" {
+		t.Fatalf("SDK negotiated protocol %q, want 2026-07-28", got)
+	}
 	tools, err := session.ListTools(t.Context(), nil)
 	if err != nil || len(tools.Tools) == 0 {
 		t.Fatalf("SDK ListTools: %v, %v", tools, err)

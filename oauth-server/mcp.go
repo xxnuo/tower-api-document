@@ -824,7 +824,7 @@ type mcpAccountKey struct{}
 func setMCPHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("Access-Control-Allow-Origin", "*")
 	writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, AGENTS_TOWER_API_KEY, X-API-Key, X-Agents-Tower-Key, Mcp-Session-Id, MCP-Protocol-Version")
+	writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, AGENTS_TOWER_API_KEY, X-API-Key, X-Agents-Tower-Key, Mcp-Session-Id, Mcp-Protocol-Version, Mcp-Method, Mcp-Name")
 	writer.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 }
 
