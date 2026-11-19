@@ -977,7 +977,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 		}
 		acc, err := cfg.Store.accountForMCPRoute(mcpKey, hash)
 		if err == nil {
-			acc, err = cfg.Store.EnsureFreshToken(cfg, acc.MCPAPIKey, false)
+			acc, err = cfg.Store.EnsureFreshToken(req.Context(), cfg, acc, "")
 		}
 		if err != nil {
 			status := http.StatusUnauthorized
@@ -1489,14 +1489,18 @@ func doTowerHTTPWithRefresh(
 	method, apiPath, rawQuery string,
 	bodyBytes []byte,
 ) (int, []byte, error) {
-	statusCode, respBytes, err := doTowerHTTP(ctx, cfg, acc.AccessToken, method, apiPath, rawQuery, bodyBytes)
+	accessToken := acc.AccessToken
+	statusCode, respBytes, err := doTowerHTTP(ctx, cfg, accessToken, method, apiPath, rawQuery, bodyBytes)
 	if err != nil {
 		return 0, nil, err
 	}
 	if statusCode == http.StatusUnauthorized && acc.RefreshToken != "" && cfg.Store != nil {
-		refreshed, refreshErr := cfg.Store.EnsureFreshToken(cfg, mcpKey, true)
-		if refreshErr == nil {
-			acc.AccessToken = refreshed.AccessToken
+		current, refreshErr := cfg.Store.GetByMCPKey(cmp.Or(acc.MCPAPIKey, mcpKey))
+		var refreshed *StoredAccount
+		if refreshErr == nil && current.ID == acc.ID {
+			refreshed, refreshErr = cfg.Store.EnsureFreshToken(ctx, cfg, acc, accessToken)
+		}
+		if refreshed != nil && refreshErr == nil {
 			statusCode, respBytes, err = doTowerHTTP(ctx, cfg, refreshed.AccessToken, method, apiPath, rawQuery, bodyBytes)
 			if err != nil {
 				return 0, nil, err

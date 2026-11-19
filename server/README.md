@@ -43,6 +43,8 @@ go run . user reset-password <username> <new-password>
 
 ### 生产服务
 
+使用 Caddy 蓝绿部署时，首次接管、后续发布和回滚见[单机蓝绿部署](../deploy/README.md)。下面的命令适用于仍由单容器直接监听 18888 的部署。
+
 - 部署主机为 `xxnuo@kompiler.lan`，由当前用户通过 Podman Compose 管理。
 - 服务入口为 [http://kompiler.lan:18888](http://kompiler.lan:18888)，MCP 路径为 `/mcp`。宿主机端口 `18888` 映射到容器端口 `8888`。
 - 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.5`。

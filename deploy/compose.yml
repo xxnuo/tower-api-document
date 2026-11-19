@@ -1,0 +1,23 @@
+x-app: &app
+  image: ${APP_IMAGE:-registry.lazycat.cloud/x/agentstower:latest}
+  restart: unless-stopped
+  env_file: ${APP_ENV_FILE:-./.env}
+  environment:
+    LISTEN_ADDR: "[::]:8888"
+    DB_PATH: /app/data/data.db
+  volumes:
+    - ${APP_DATA_DIR:-./data}:/app/data:z
+  stop_grace_period: 30s
+
+services:
+  blue: *app
+  green: *app
+  spare: *app
+  gateway:
+    image: docker.io/library/caddy:2.11.9-alpine
+    restart: unless-stopped
+    command: ["caddy", "run", "--config", "/rollout/Caddyfile", "--adapter", "caddyfile"]
+    ports:
+      - "${PUBLIC_BIND:-18888}:8080"
+    volumes:
+      - ./.rollout:/rollout:ro,z

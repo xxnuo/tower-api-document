@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -22,16 +22,27 @@ type webGrant struct {
 	consent     url.Values
 }
 
-var grantChallenges sync.Map
+type webGrantChallenge struct {
+	RebindID    string
+	State, Code string
+	Consent     url.Values
+	Cookies     []webCookie
+	Email       string
+}
 
 // Keep the session and authorization code server-side while waiting for user input.
-func (g *webGrant) challenge(status string, message string) (map[string]any, error) {
+func (g *webGrant) challenge(cfg Config, status string, message string) (map[string]any, error) {
 	id, err := randomState()
 	if err != nil {
 		return nil, err
 	}
-	grantChallenges.Store(id, g)
-	time.AfterFunc(5*time.Minute, func() { grantChallenges.Delete(id) })
+	snapshot := webGrantChallenge{
+		RebindID: g.rebindID, State: g.state, Code: g.code, Consent: g.consent,
+		Cookies: g.client.jar.export(), Email: g.client.email,
+	}
+	if err := cfg.Store.putAuthState(authStateGrant, id, g.owner, snapshot, 5*time.Minute); err != nil {
+		return nil, errors.New("无法保存授权状态")
+	}
 	return map[string]any{"status": status, "challenge": id, "message": message}, nil
 }
 
@@ -45,14 +56,26 @@ func handleGrantContinue(cfg Config) http.HandlerFunc {
 			writeJSON(w, 400, map[string]any{"error": "无效授权请求"})
 			return
 		}
-		value, ok := grantChallenges.Load(input.Challenge)
-		if !ok || value.(*webGrant).owner != userFromContext(r.Context()).ID || !grantChallenges.CompareAndDelete(input.Challenge, value) {
+		owner := userFromContext(r.Context()).ID
+		var snapshot webGrantChallenge
+		err := cfg.Store.takeAuthState(authStateGrant, input.Challenge, owner, &snapshot)
+		if errors.Is(err, sql.ErrNoRows) {
 			writeJSON(w, 409, map[string]any{"error": "授权已失效，请重新登录"})
 			return
 		}
-		g := value.(*webGrant)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "无法读取授权状态"})
+			return
+		}
+		client, err := newWebClient(cfg.BaseURL, snapshot.Cookies)
+		if err != nil {
+			writeGrant(w, nil, err)
+			return
+		}
+		client.email = snapshot.Email
+		g := webGrant{owner: owner, rebindID: snapshot.RebindID, client: client,
+			state: snapshot.State, code: snapshot.Code, consent: snapshot.Consent}
 		var result map[string]any
-		var err error
 		if g.consent != nil {
 			if !input.Approve {
 				err = errors.New("已取消授权")
@@ -160,7 +183,7 @@ func (g *webGrant) authorize(ctx context.Context, cfg Config) (map[string]any, e
 			if scope := fields.Get("scope"); scope != "" {
 				message += " 授权范围：" + scope
 			}
-			return g.challenge("consent", message)
+			return g.challenge(cfg, "consent", message)
 		}
 		return nil, errors.New("Tower 授权页未提供授权码或确认表单")
 	}
@@ -186,7 +209,7 @@ func (g *webGrant) exchange(cfg Config, captcha string) (map[string]any, error) 
 		return nil, errors.New("Tower Token 交换失败")
 	}
 	if token.Error == "otp_required" {
-		return g.challenge("otp", "请输入 Tower 发送的验证码")
+		return g.challenge(cfg, "otp", "请输入 Tower 发送的验证码")
 	}
 	if token.Error != "" {
 		return nil, errors.New(formatOAuthError(token.Error, token.ErrorDescription))

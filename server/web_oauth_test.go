@@ -28,6 +28,10 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 		fmt.Fprintf(w, `<form method="post" action="/oauth/authorize"><input type="hidden" name="client_id" value="app"><input type="hidden" name="redirect_uri" value="%s"><input type="hidden" name="state" value="%s"></form>`, callback, r.URL.Query().Get("state"))
 	})
 	mux.HandleFunc("POST /oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
+		if cookie, err := r.Cookie("session"); err != nil || (cookie.Value != "test" && cookie.Value != "rebound") {
+			http.Error(w, "missing restored session", http.StatusUnauthorized)
+			return
+		}
 		http.Redirect(w, r, callback+"?code=granted&state="+url.QueryEscape(r.FormValue("state")), 302)
 	})
 	mux.HandleFunc("POST /oauth/token", func(w http.ResponseWriter, r *http.Request) {
@@ -46,11 +50,7 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 	})
 	upstream := httptest.NewServer(mux)
 	defer upstream.Close()
-	db, err := OpenStore(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
+	db, standby := openTestAuthStores(t)
 	cfg := Config{Store: db, ClientID: "app", BaseURL: upstream.URL, RedirectURI: callback, HTTPClient: upstream.Client()}
 	client, err := newWebClient(cfg.BaseURL, []webCookie{{Name: "session", Value: "test"}})
 	if err != nil {
@@ -61,28 +61,30 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 	if err != nil || result["status"] != "consent" {
 		t.Fatal(result, err)
 	}
-	send := func(owner int64, ticket any, extra string) *httptest.ResponseRecorder {
+	send := func(store *Store, owner int64, ticket any, extra string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", "/", strings.NewReader(fmt.Sprintf(`{"challenge":"%s",%s}`, ticket, extra)))
 		req = req.WithContext(context.WithValue(req.Context(), authUserCtxKey{}, &User{ID: owner}))
 		rec := httptest.NewRecorder()
-		handleGrantContinue(cfg)(rec, req)
+		instance := cfg
+		instance.Store = store
+		handleGrantContinue(instance)(rec, req)
 		return rec
 	}
-	if rec := send(13, result["challenge"], `"approve":true`); rec.Code != 409 {
+	if rec := send(standby, 13, result["challenge"], `"approve":true`); rec.Code != 409 {
 		t.Fatal(rec.Code)
 	}
-	rec := send(12, result["challenge"], `"approve":true`)
+	rec := send(standby, 12, result["challenge"], `"approve":true`)
 	var otp struct{ Status, Challenge string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &otp); err != nil || otp.Status != "otp" {
 		t.Fatal(rec.Body.String())
 	}
-	if rec := send(12, otp.Challenge, `"captcha":"123456"`); rec.Code != 200 {
+	if rec := send(db, 12, otp.Challenge, `"captcha":"123456"`); rec.Code != 200 {
 		t.Fatal(rec.Body.String())
 	}
 	if _, err := db.GetWebSession("u12:user1"); err != nil {
 		t.Fatal(err)
 	}
-	if rec := send(12, otp.Challenge, `"captcha":"123456"`); rec.Code != 409 {
+	if rec := send(standby, 12, otp.Challenge, `"captcha":"123456"`); rec.Code != 409 {
 		t.Fatal("reused challenge")
 	}
 	client.email = "other@example.com"
@@ -107,11 +109,11 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil || rec.Code != 200 || reply.Status != "consent" {
 				t.Fatalf("rebind did not start OAuth: %s", rec.Body.String())
 			}
-			rec = send(15, reply.Challenge, `"approve":true`)
+			rec = send(standby, 15, reply.Challenge, `"approve":true`)
 			if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil || rec.Code != 200 || reply.Status != "otp" {
 				t.Fatalf("missing OTP challenge: %s", rec.Body.String())
 			}
-			rec = send(15, reply.Challenge, `"captcha":"123456"`)
+			rec = send(db, 15, reply.Challenge, `"captcha":"123456"`)
 			after, err := db.GetByID(before.ID)
 			if err != nil {
 				t.Fatal(err)

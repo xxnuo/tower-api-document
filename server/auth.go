@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 )
@@ -218,11 +217,6 @@ const (
 	loginRateLimitWindow = 5 * time.Minute
 )
 
-type loginFailBucket struct {
-	count   int
-	resetAt time.Time
-}
-
 func clientIPFromReq(req *http.Request) string {
 	if xff := strings.TrimSpace(req.Header.Get("X-Forwarded-For")); xff != "" {
 		first, _, _ := strings.Cut(xff, ",")
@@ -238,9 +232,6 @@ func clientIPFromReq(req *http.Request) string {
 }
 
 func handleAuthLogin(cfg Config) http.HandlerFunc {
-	var mu sync.Mutex
-	buckets := map[string]loginFailBucket{}
-
 	return func(writer http.ResponseWriter, req *http.Request) {
 		var payload struct {
 			Username string `json:"username"`
@@ -251,30 +242,22 @@ func handleAuthLogin(cfg Config) http.HandlerFunc {
 			return
 		}
 		bucketKey := clientIPFromReq(req) + "|" + strings.ToLower(strings.TrimSpace(payload.Username))
-		now := time.Now()
-		mu.Lock()
-		for k, b := range buckets {
-			if now.After(b.resetAt) {
-				delete(buckets, k)
-			}
+		blocked, err := cfg.Store.loginBlocked(bucketKey)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "登录验证失败"})
+			return
 		}
-		if b, ok := buckets[bucketKey]; ok && now.Before(b.resetAt) && b.count >= loginRateLimitMax {
-			mu.Unlock()
+		if blocked {
 			writeJSON(writer, http.StatusTooManyRequests, map[string]any{"error": "登录失败次数过多，请 5 分钟后再试"})
 			return
 		}
-		mu.Unlock()
 
 		u, err := cfg.Store.AuthenticateUser(payload.Username, payload.Password)
 		if errors.Is(err, ErrInvalidCreds) {
-			mu.Lock()
-			b := buckets[bucketKey]
-			if now.After(b.resetAt) {
-				b = loginFailBucket{count: 0, resetAt: now.Add(loginRateLimitWindow)}
+			if err := cfg.Store.recordLoginFailure(bucketKey); err != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "登录验证失败"})
+				return
 			}
-			b.count++
-			buckets[bucketKey] = b
-			mu.Unlock()
 			writeJSON(writer, http.StatusUnauthorized, map[string]any{"error": "用户名或密码错误"})
 			return
 		}
@@ -282,9 +265,10 @@ func handleAuthLogin(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "登录验证失败"})
 			return
 		}
-		mu.Lock()
-		delete(buckets, bucketKey)
-		mu.Unlock()
+		if err := cfg.Store.clearLoginFailures(bucketKey); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "登录验证失败"})
+			return
+		}
 
 		sessTok, err := cfg.Store.CreateSession(u.ID)
 		if err != nil {

@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -109,8 +108,7 @@ func (acc *StoredAccount) NeedsRefresh(now time.Time) bool {
 }
 
 type Store struct {
-	db        *sql.DB
-	refreshMu sync.Mutex
+	db *sql.DB
 }
 
 const defaultDBPath = "data/data.db"
@@ -185,6 +183,11 @@ func OpenStore(dbPath string) (*Store, error) {
 	);
 	CREATE INDEX IF NOT EXISTS idx_accounts_mcp_api_key ON accounts(mcp_api_key);
 	CREATE INDEX IF NOT EXISTS idx_accounts_access_token ON accounts(access_token);
+	CREATE TABLE IF NOT EXISTS token_refresh_leases (
+		account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+		owner TEXT NOT NULL,
+		expires_at INTEGER NOT NULL
+	);
 	CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -205,6 +208,22 @@ func OpenStore(dbPath string) (*Store, error) {
 	);
 	CREATE INDEX IF NOT EXISTS idx_mcp_operation_logs_user ON mcp_operation_logs(user_id, id);
 	CREATE INDEX IF NOT EXISTS idx_mcp_operation_logs_expiry ON mcp_operation_logs(` + mcpLogExpirySQL + `);
+	CREATE TABLE IF NOT EXISTS auth_states (
+		kind TEXT NOT NULL,
+		id TEXT NOT NULL,
+		owner INTEGER NOT NULL,
+		payload BLOB NOT NULL,
+		expires_at INTEGER NOT NULL,
+		leased_until INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (kind, id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_auth_states_expiry ON auth_states(expires_at);
+	CREATE TABLE IF NOT EXISTS login_failures (
+		bucket TEXT PRIMARY KEY,
+		count INTEGER NOT NULL,
+		reset_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_login_failures_expiry ON login_failures(reset_at);
 	CREATE TABLE IF NOT EXISTS web_sessions (
 		account_id TEXT PRIMARY KEY,
 		cookies TEXT NOT NULL,
@@ -945,49 +964,6 @@ func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web
 	return acc, tx.Commit()
 }
 
-func (s *Store) UpdateTokens(id string, token TokenResponse) (*StoredAccount, error) {
-	existing, err := s.GetByID(id)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now().Unix()
-	createdAt := token.CreatedAt
-	if createdAt <= 0 {
-		createdAt = now
-	}
-	refreshToken := strings.TrimSpace(token.RefreshToken)
-	if refreshToken == "" {
-		refreshToken = existing.RefreshToken
-	}
-	tokenType := strings.TrimSpace(token.TokenType)
-	if tokenType == "" {
-		tokenType = existing.TokenType
-	}
-	expiresIn := token.ExpiresIn
-	if expiresIn <= 0 {
-		expiresIn = existing.ExpiresIn
-	}
-	_, err = s.db.Exec(
-		`UPDATE accounts
-		 SET access_token = ?, refresh_token = ?, token_type = ?, expires_in = ?, token_created_at = ?, updated_at = ?
-		 WHERE id = ?`,
-		token.AccessToken, refreshToken, tokenType, expiresIn, createdAt, now, id,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return s.GetByID(id)
-}
-
-func (s *Store) UpdateTokensByRefresh(oldRefreshToken string, token TokenResponse) (*StoredAccount, error) {
-	row := s.db.QueryRow(`SELECT `+selectAccountCols+` FROM accounts WHERE refresh_token = ?`, strings.TrimSpace(oldRefreshToken))
-	acc, err := scanAccount(row)
-	if err != nil {
-		return nil, err
-	}
-	return s.UpdateTokens(acc.ID, token)
-}
-
 func (s *Store) RotateMCPKey(credential string) (*StoredAccount, error) {
 	return s.RotateMCPKeyForUser(0, credential)
 }
@@ -1025,34 +1001,6 @@ func (s *Store) DeleteByAuthForUser(userID int64, credential string) error {
 	}
 	_, err = s.db.Exec(`DELETE FROM accounts WHERE id = ?`, acc.ID)
 	return err
-}
-
-func (s *Store) EnsureFreshToken(cfg Config, mcpKey string, force bool) (*StoredAccount, error) {
-	s.refreshMu.Lock()
-	defer s.refreshMu.Unlock()
-
-	acc, err := s.GetByMCPKey(mcpKey)
-	if err != nil {
-		return nil, err
-	}
-	if !force && !acc.NeedsRefresh(time.Now()) {
-		return acc, nil
-	}
-	if acc.RefreshToken == "" {
-		if force {
-			return nil, errors.New("Tower Access Token 已失效且无可用 Refresh Token，请重新登录 AgentsTower")
-		}
-		return acc, nil
-	}
-	form := refreshTokenForm(cfg, acc.RefreshToken)
-	tokenResp, err := postToken(cfg, form, acc.AccessToken)
-	if err != nil {
-		return nil, errors.New("自动刷新 Tower Token 失败: " + err.Error())
-	}
-	if tokenResp.Error != "" {
-		return nil, errors.New("自动刷新 Tower Token 失败: " + formatOAuthError(tokenResp.Error, tokenResp.ErrorDescription))
-	}
-	return s.UpdateTokens(acc.ID, tokenResp)
 }
 
 func (s *Store) SaveWebSession(accountID string, cookies []webCookie, email, memberGUID string) error {

@@ -343,9 +343,10 @@ func TestCallbackExchangesCodeAndFetchesUser(t *testing.T) {
 
 	mux := newMux(testConfig(tower.URL))
 	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
-	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state=ok&format=json", nil)
+	state := startTestOAuth(t, mux, sess)
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state="+state.Value+"&format=json", nil)
 	req.AddCookie(sess)
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "ok"})
+	req.AddCookie(state)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
@@ -382,9 +383,10 @@ func TestOTPRequiredAndSubmit(t *testing.T) {
 
 	mux := newMux(testConfig(tower.URL))
 	sess, _, _ := registerTestUser(t, mux, "tester", "secret123")
-	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state=ok&format=json", nil)
+	state := startTestOAuth(t, mux, sess)
+	req := httptest.NewRequest(http.MethodGet, "/oauth2/callback?code=authcode&state="+state.Value+"&format=json", nil)
 	req.AddCookie(sess)
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "ok"})
+	req.AddCookie(state)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"otp_required":true`) {

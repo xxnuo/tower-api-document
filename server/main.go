@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -15,14 +16,16 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"strconv"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 )
 
@@ -52,16 +55,6 @@ var appVersion = func() string {
 	}
 	return metadata.Version
 }()
-
-type pendingEntry struct {
-	Payload   any
-	ExpiresAt time.Time
-}
-
-var (
-	pendingMu      sync.Mutex
-	pendingResults = map[string]pendingEntry{}
-)
 
 type Config struct {
 	ClientID     string
@@ -237,6 +230,15 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
 		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower", "version": appVersion})
 	})
+	mux.HandleFunc("GET /api/readyz", func(writer http.ResponseWriter, req *http.Request) {
+		ctx, cancel := context.WithTimeout(req.Context(), time.Second)
+		defer cancel()
+		if err := cfg.Store.db.PingContext(ctx); err != nil {
+			writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
+	})
 	mux.HandleFunc("GET /api/config", func(writer http.ResponseWriter, req *http.Request) {
 		settings := cfg.Store.GetSettings()
 		config := map[string]any{
@@ -288,7 +290,7 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/mcp-logs", requireAuth(cfg, handleMCPLogs(cfg, false)))
 	mux.HandleFunc("GET /api/admin/mcp-logs", requireAdmin(cfg, handleMCPLogs(cfg, true)))
 
-	mux.HandleFunc("GET /api/auth/result", requireAuth(cfg, handlePendingResult()))
+	mux.HandleFunc("GET /api/auth/result", requireAuth(cfg, handlePendingResult(cfg)))
 	mux.HandleFunc("GET /api/accounts", requireAuth(cfg, func(writer http.ResponseWriter, req *http.Request) {
 		u := userFromContext(req.Context())
 		writeJSON(writer, http.StatusOK, map[string]any{"accounts": userLoginResults(cfg, u.ID)})
@@ -363,8 +365,8 @@ func isOOB(cfg Config) bool {
 func handleLogin(cfg Config) http.HandlerFunc {
 	return func(writer http.ResponseWriter, req *http.Request) {
 		state, err := randomState()
-		if err != nil {
-			respondAuthOutcome(writer, req, http.StatusInternalServerError, map[string]any{"error": "无法生成 state"})
+		if err != nil || cfg.Store.putAuthState(authStateOAuth, state, userFromContext(req.Context()).ID, nil, 10*time.Minute) != nil {
+			respondAuthOutcome(cfg, writer, req, http.StatusInternalServerError, map[string]any{"error": "无法生成 state"})
 			return
 		}
 		http.SetCookie(writer, &http.Cookie{
@@ -388,13 +390,15 @@ func handleCallback(cfg Config) http.HandlerFunc {
 	return func(writer http.ResponseWriter, req *http.Request) {
 		if errParam := req.URL.Query().Get("error"); errParam != "" {
 			desc := req.URL.Query().Get("error_description")
-			respondAuthOutcome(writer, req, http.StatusBadRequest, map[string]any{"error": strings.TrimSpace(errParam + " " + desc)})
+			respondAuthOutcome(cfg, writer, req, http.StatusBadRequest, map[string]any{"error": strings.TrimSpace(errParam + " " + desc)})
 			return
 		}
 		cookie, err := req.Cookie(stateCookieName)
 		state := req.URL.Query().Get("state")
-		if err != nil || state == "" || cookie.Value != state {
-			respondAuthOutcome(writer, req, http.StatusBadRequest, map[string]any{"error": "state 校验失败，请重新登录"})
+		var consumed json.RawMessage
+		if err != nil || state == "" || cookie.Value != state ||
+			cfg.Store.takeAuthState(authStateOAuth, state, userFromContext(req.Context()).ID, &consumed) != nil {
+			respondAuthOutcome(cfg, writer, req, http.StatusBadRequest, map[string]any{"error": "state 校验失败，请重新登录"})
 			return
 		}
 		http.SetCookie(writer, &http.Cookie{
@@ -406,7 +410,7 @@ func handleCallback(cfg Config) http.HandlerFunc {
 		})
 		code := req.URL.Query().Get("code")
 		if code == "" {
-			respondAuthOutcome(writer, req, http.StatusBadRequest, map[string]any{"error": "缺少授权码 code"})
+			respondAuthOutcome(cfg, writer, req, http.StatusBadRequest, map[string]any{"error": "缺少授权码 code"})
 			return
 		}
 		finishCodeExchange(cfg, writer, req, code, "")
@@ -491,15 +495,15 @@ func finishCodeExchange(cfg Config, writer http.ResponseWriter, req *http.Reques
 
 	tokenResp, err := postToken(cfg, form, "")
 	if err != nil {
-		respondAuthOutcome(writer, req, http.StatusBadGateway, map[string]any{"error": "获取 Token 失败: " + err.Error()})
+		respondAuthOutcome(cfg, writer, req, http.StatusBadGateway, map[string]any{"error": "获取 Token 失败: " + err.Error()})
 		return
 	}
 	if tokenResp.Error == "otp_required" {
-		respondAuthOutcome(writer, req, http.StatusOK, map[string]any{"otp_required": true, "code": code})
+		respondAuthOutcome(cfg, writer, req, http.StatusOK, map[string]any{"otp_required": true, "code": code})
 		return
 	}
 	if tokenResp.Error != "" {
-		respondAuthOutcome(writer, req, http.StatusBadGateway, map[string]any{"error": formatOAuthError(tokenResp.Error, tokenResp.ErrorDescription)})
+		respondAuthOutcome(cfg, writer, req, http.StatusBadGateway, map[string]any{"error": formatOAuthError(tokenResp.Error, tokenResp.ErrorDescription)})
 		return
 	}
 
@@ -518,10 +522,10 @@ func finishCodeExchange(cfg Config, writer http.ResponseWriter, req *http.Reques
 			log.Printf("failed to save account to sqlite: %v", storeErr)
 		}
 	}
-	respondAuthOutcome(writer, req, http.StatusOK, result)
+	respondAuthOutcome(cfg, writer, req, http.StatusOK, result)
 }
 
-func respondAuthOutcome(writer http.ResponseWriter, req *http.Request, status int, payload any) {
+func respondAuthOutcome(cfg Config, writer http.ResponseWriter, req *http.Request, status int, payload any) {
 	if req.Method == http.MethodPost || wantsJSON(req) {
 		writeJSON(writer, status, payload)
 		return
@@ -531,15 +535,10 @@ func respondAuthOutcome(writer http.ResponseWriter, req *http.Request, status in
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "无法保存登录状态"})
 		return
 	}
-	pendingMu.Lock()
-	now := time.Now()
-	for existingKey, entry := range pendingResults {
-		if now.After(entry.ExpiresAt) {
-			delete(pendingResults, existingKey)
-		}
+	if err := cfg.Store.putAuthState(authStateResult, key, userFromContext(req.Context()).ID, payload, 5*time.Minute); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "无法保存登录状态"})
+		return
 	}
-	pendingResults[key] = pendingEntry{Payload: payload, ExpiresAt: now.Add(5 * time.Minute)}
-	pendingMu.Unlock()
 
 	http.SetCookie(writer, &http.Cookie{
 		Name:     resultCookieName,
@@ -552,7 +551,7 @@ func respondAuthOutcome(writer http.ResponseWriter, req *http.Request, status in
 	http.Redirect(writer, req, "/", http.StatusFound)
 }
 
-func handlePendingResult() http.HandlerFunc {
+func handlePendingResult(cfg Config) http.HandlerFunc {
 	return func(writer http.ResponseWriter, req *http.Request) {
 		cookie, err := req.Cookie(resultCookieName)
 		if err != nil || cookie.Value == "" {
@@ -566,15 +565,17 @@ func handlePendingResult() http.HandlerFunc {
 			MaxAge:   -1,
 			HttpOnly: true,
 		})
-		pendingMu.Lock()
-		entry, ok := pendingResults[cookie.Value]
-		delete(pendingResults, cookie.Value)
-		pendingMu.Unlock()
-		if !ok || time.Now().After(entry.ExpiresAt) {
+		var payload json.RawMessage
+		err = cfg.Store.takeAuthState(authStateResult, cookie.Value, userFromContext(req.Context()).ID, &payload)
+		if errors.Is(err, sql.ErrNoRows) {
 			writer.WriteHeader(http.StatusNoContent)
 			return
 		}
-		writeJSON(writer, http.StatusOK, entry.Payload)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "无法读取登录状态"})
+			return
+		}
+		writeJSON(writer, http.StatusOK, payload)
 	}
 }
 
@@ -608,19 +609,29 @@ func handleRefresh(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "refresh_token is required"})
 			return
 		}
-		form := refreshTokenForm(cfg, payload.RefreshToken)
-
-		tokenResp, err := postToken(cfg, form, payload.AccessToken)
+		refreshToken := strings.TrimSpace(payload.RefreshToken)
+		var tokenResp TokenResponse
+		var err error
+		var acc *StoredAccount
+		if user := userFromContext(req.Context()); cfg.Store != nil && user != nil {
+			acc, err = scanAccount(cfg.Store.db.QueryRowContext(req.Context(), `
+				SELECT `+selectAccountCols+` FROM accounts
+				WHERE (user_id = ? OR user_id = 0) AND (refresh_token = ? OR (? <> '' AND access_token = ?))
+				ORDER BY (refresh_token = ?) DESC, user_id DESC LIMIT 1`,
+				user.ID, refreshToken, payload.AccessToken, payload.AccessToken, refreshToken))
+			if err != nil && !errors.Is(err, ErrAccountNotFound) {
+				writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		if acc != nil {
+			tokenResp, err = cfg.Store.refreshAccount(req.Context(), cfg, acc, payload.AccessToken, refreshToken, payload.AccessToken)
+		} else {
+			tokenResp, err = postTokenContext(req.Context(), cfg, refreshTokenForm(cfg, refreshToken), payload.AccessToken)
+		}
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
-		}
-		if cfg.Store != nil && tokenResp.AccessToken != "" {
-			if _, updErr := cfg.Store.UpdateTokensByRefresh(payload.RefreshToken, tokenResp); updErr != nil {
-				if existing, getErr := cfg.Store.GetByAccessToken(payload.AccessToken); getErr == nil {
-					_, _ = cfg.Store.UpdateTokens(existing.ID, tokenResp)
-				}
-			}
 		}
 		writeJSON(writer, http.StatusOK, tokenResp)
 	}
@@ -743,8 +754,10 @@ func handleVerify(cfg Config) http.HandlerFunc {
 			return
 		}
 		if strings.HasPrefix(token, "at_sk-") && cfg.Store != nil {
-			if acc, err := cfg.Store.EnsureFreshToken(cfg, token, false); err == nil {
-				token = acc.AccessToken
+			if acc, err := cfg.Store.GetByMCPKey(token); err == nil {
+				if acc, err := cfg.Store.EnsureFreshToken(req.Context(), cfg, acc, ""); err == nil {
+					token = acc.AccessToken
+				}
 			}
 		}
 		user, err := fetchUser(cfg, token)
@@ -791,7 +804,10 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 				writeJSON(writer, 401, map[string]any{"error": "请重新连接 Tower 账号"})
 				return
 			}
-			acc, err := cfg.Store.EnsureFreshToken(cfg, token, false)
+			acc, err := cfg.Store.GetByMCPKey(token)
+			if err == nil {
+				acc, err = cfg.Store.EnsureFreshToken(req.Context(), cfg, acc, "")
+			}
 			if err != nil {
 				writeJSON(writer, 401, map[string]any{"error": "Tower 连接已失效，请重新登录"})
 				return
@@ -964,8 +980,12 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 }
 
 func postToken(cfg Config, form url.Values, bearerToken string) (TokenResponse, error) {
+	return postTokenContext(context.Background(), cfg, form, bearerToken)
+}
+
+func postTokenContext(ctx context.Context, cfg Config, form url.Values, bearerToken string) (TokenResponse, error) {
 	var tokenResp TokenResponse
-	httpReq, err := http.NewRequest(http.MethodPost, cfg.BaseURL+"/oauth/token", strings.NewReader(form.Encode()))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.BaseURL+"/oauth/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return tokenResp, err
 	}
@@ -1050,26 +1070,74 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+	if err := runHTTPServer(ctx, cfg); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runHTTPServer(ctx context.Context, cfg Config) error {
 	store, err := OpenStore(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("open sqlite store (%s): %v", cfg.DBPath, err)
+		return fmt.Errorf("open sqlite store (%s): %w", cfg.DBPath, err)
 	}
 	defer store.Close()
 	cfg.Store = store
 
+	listener, err := net.Listen("tcp", cfg.ListenAddr)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	maintenanceCtx, stopMaintenance := context.WithCancel(ctx)
+	maintenanceDone := make(chan struct{})
 	go func() {
-		for now := range time.Tick(time.Minute) {
-			if err := store.purgeExpiredMCPLogs(now); err != nil {
-				log.Printf("purge expired MCP operation logs: %v", err)
+		defer close(maintenanceDone)
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-maintenanceCtx.Done():
+				return
+			case now := <-ticker.C:
+				if err := store.purgeExpiredMCPLogs(now); err != nil {
+					log.Printf("purge expired MCP operation logs: %v", err)
+				}
 			}
 		}
 	}()
+	defer func() {
+		stopMaintenance()
+		<-maintenanceDone
+	}()
 
-	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, configured_db=%s)", cfg.ListenAddr, cfg.RedirectURI, cfg.DBPath)
+	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, configured_db=%s)", listener.Addr(), cfg.RedirectURI, cfg.DBPath)
 	server := &http.Server{
-		Addr:              cfg.ListenAddr,
 		Handler:           newMux(cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	log.Fatal(server.ListenAndServe())
+	return serveUntilShutdown(ctx, server, listener)
+}
+
+func serveUntilShutdown(ctx context.Context, server *http.Server, listener net.Listener) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- server.Serve(listener)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		err := server.Shutdown(shutdownCtx)
+		if err != nil {
+			_ = server.Close()
+		}
+		<-done
+		return err
+	}
 }

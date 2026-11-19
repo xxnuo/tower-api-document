@@ -1,0 +1,54 @@
+# routes: ACTIVE_SLOT PREVIOUS_SLOT
+(fallback_assets) {
+	reverse_proxy PREVIOUS_SLOT:8888 {
+		transport http {
+			keepalive off
+		}
+		@spa {
+			status 200
+			header Content-Type text/html*
+		}
+		handle_response @spa {
+			respond 404
+		}
+	}
+}
+
+{
+	servers :8080 {
+		expected_underscore_headers AGENTS_TOWER_API_KEY
+	}
+}
+
+http://:8080 {
+	@assets {
+		method GET HEAD
+		path /assets/*
+	}
+	handle @assets {
+		reverse_proxy ACTIVE_SLOT:8888 {
+			transport http {
+				keepalive off
+			}
+			@spa {
+				status 200
+				header Content-Type text/html*
+			}
+			@missing status 404
+			handle_response @spa {
+				import fallback_assets
+			}
+			handle_response @missing {
+				import fallback_assets
+			}
+		}
+	}
+	handle {
+		reverse_proxy ACTIVE_SLOT:8888 {
+			header_down X-AgentsTower-Slot ACTIVE_SLOT
+			transport http {
+				keepalive off
+			}
+		}
+	}
+}
