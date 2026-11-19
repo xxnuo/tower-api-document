@@ -408,7 +408,7 @@ var towerMCPTools = []mcpToolSpec{
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}/cc_members",
 		Params: []mcpParam{
 			pPath("todo_id", "任务 ID"),
-			pBody("guids", "string_array", true, "需要通知的成员 member_id 列表"),
+			pBody("guids", "string_array", true, "更新后的完整通知成员 ID 列表；传空数组清空"),
 		},
 	},
 
