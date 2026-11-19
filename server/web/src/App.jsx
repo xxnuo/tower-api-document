@@ -160,6 +160,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [skillCopied, setSkillCopied] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
+  const [copiedShareText, setCopiedShareText] = useState("");
   const [loginTarget, setLoginTarget] = useState(null);
   const [rebinding, setRebinding] = useState(false);
   const [grant, setGrant] = useState(null);
@@ -370,6 +371,12 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (shareStatus !== "分享信息已复制") return;
+    const timer = setTimeout(() => setShareStatus(""), 1800);
+    return () => clearTimeout(timer);
+  }, [shareStatus]);
+
   async function handleCopyShare() {
     setShareStatus("正在获取分享信息");
     try {
@@ -378,7 +385,9 @@ export default function App() {
       const { tower_connected_colleagues: count } = await res.json();
       if (!Number.isInteger(count) || count < 0) throw new Error();
 
-      const copied = await copy(`已有 ${count} 位同事将自己的 Tower 接入了 AI 功能，你也快试试吧！\n\n${window.location.origin}/`);
+      const text = `已有 ${count} 位同事将自己的 Tower 接入了 AI 功能，你也快试试吧！\n\n${window.location.origin}/`;
+      const copied = await copy(text);
+      if (copied) setCopiedShareText(text);
       setShareStatus(copied ? "分享信息已复制" : "");
     } catch {
       setShareStatus("获取分享信息失败，请重试");
@@ -1208,6 +1217,21 @@ ${mcpConfigSnippet}
           else if (accountToUnlink) unlinkAccounts([accountToUnlink]);
         }}
       />
+
+      <Dialog open={copiedShareText !== ""} onOpenChange={(open) => {
+        if (!open) setCopiedShareText("");
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>分享信息已复制</DialogTitle>
+            <DialogDescription>以下内容已复制到剪贴板。</DialogDescription>
+          </DialogHeader>
+          <p className="whitespace-pre-wrap wrap-break-word text-sm">{copiedShareText}</p>
+          <DialogFooter>
+            <Button type="button" onClick={() => setCopiedShareText("")}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={loginTarget !== null} onOpenChange={(open) => {
         if (!open && !loading) {
