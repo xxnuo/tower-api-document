@@ -12,6 +12,7 @@ import {
   LockKeyIcon,
   MoonIcon,
   PlusIcon,
+  ShareNetworkIcon,
   SignOutIcon,
   SunIcon,
   TerminalWindowIcon,
@@ -158,6 +159,7 @@ export default function App() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [skillCopied, setSkillCopied] = useState(false);
+  const [shareStatus, setShareStatus] = useState("");
   const [loginTarget, setLoginTarget] = useState(null);
   const [rebinding, setRebinding] = useState(false);
   const [grant, setGrant] = useState(null);
@@ -365,6 +367,21 @@ export default function App() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleCopyShare() {
+    setShareStatus("正在获取分享信息");
+    try {
+      const res = await fetch("/api/config");
+      if (!res.ok) throw new Error();
+      const { tower_connected_colleagues: count } = await res.json();
+      if (!Number.isInteger(count) || count < 0) throw new Error();
+
+      const copied = await copy(`已有 ${count} 位同事将自己的 Tower 接入了 AI 功能，你也快试试吧！\n\n${window.location.origin}/`);
+      setShareStatus(copied ? "分享信息已复制" : "");
+    } catch {
+      setShareStatus("获取分享信息失败，请重试");
     }
   }
 
@@ -828,7 +845,7 @@ ${mcpConfigSnippet}
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="flex-1 justify-between h-9 px-2 hover:bg-sidebar-accent text-left font-normal"
+                    className="min-w-0 flex-1 justify-between h-9 px-2 hover:bg-sidebar-accent text-left font-normal"
                     title={displayName}
                   />
                 }
@@ -876,6 +893,20 @@ ${mcpConfigSnippet}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              className="shrink-0 size-8"
+              aria-label="复制分享信息"
+              title={shareStatus || "复制分享信息"}
+              disabled={shareStatus === "正在获取分享信息"}
+              onClick={handleCopyShare}
+            >
+              {shareStatus === "分享信息已复制" ? <CheckIcon className="size-4" /> : <ShareNetworkIcon className="size-4" />}
+            </Button>
+            <span role="status" className="sr-only">{shareStatus}</span>
 
             <Button
               type="button"
