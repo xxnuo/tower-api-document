@@ -768,6 +768,28 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 		t.Fatalf("SDK CallTool: %v, %v", result, err)
 	}
 
+	before := time.Now().Truncate(time.Second)
+	result, err = session.CallTool(t.Context(), &mcp.CallToolParams{Name: "get_current_datetime"})
+	if err != nil || result.IsError || len(result.Content) != 1 {
+		t.Fatalf("get_current_datetime: %v, %v", result, err)
+	}
+	content, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("expected text content, got %T", result.Content[0])
+	}
+	for _, line := range strings.Split(content.Text, "\n") {
+		if value, ok := strings.CutPrefix(line, "datetime："); ok {
+			now, err := time.Parse(time.RFC3339, value)
+			if err != nil || !strings.HasSuffix(value, "+08:00") || now.Before(before) || now.After(time.Now()) {
+				t.Fatalf("expected current UTC+08:00 datetime, got %q", value)
+			}
+			if !strings.Contains(content.Text, "weekday："+now.Weekday().String()) {
+				t.Fatalf("missing matching weekday: %s", content.Text)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing datetime: %s", content.Text)
 }
 
 func TestUserAuthQuickLoginRolesAndCLI(t *testing.T) {

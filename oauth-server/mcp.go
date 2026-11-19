@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -603,7 +604,7 @@ func buildToolSchema(spec mcpToolSpec) map[string]any {
 }
 
 func totalMCPToolCount() int {
-	return len(towerMCPTools) + 7
+	return len(towerMCPTools) + 8
 }
 
 func isSafeTodoStateDelete(apiPath string) bool {
@@ -631,6 +632,22 @@ func listMCPToolDefinitions() []map[string]any {
 		})
 	}
 	out = append(out,
+		map[string]any{
+			"name":        "get_current_datetime",
+			"description": "获取当前北京时间（UTC+08:00）和星期，用于判断今天、明天等相对日期。",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"additionalProperties": false,
+			},
+			"annotations": map[string]any{
+				"title":           "获取当前日期时间",
+				"readOnlyHint":    true,
+				"destructiveHint": false,
+				"idempotentHint":  true,
+				"openWorldHint":   false,
+			},
+		},
 		map[string]any{
 			"name":        "my_todo_overview",
 			"description": "聚合获取当前账号跨团队的未完成任务汇总（自动查询所属团队、解析当前成员 member_id 并拉取指派给自己或自己创建的未完成任务，无需分步串联 ID）",
@@ -777,6 +794,8 @@ func listMCPToolDefinitions() []map[string]any {
 		switch tool["name"] {
 		case "search_todos", "add_todo_project", "remove_todo_project":
 			source = "Web"
+		case "get_current_datetime":
+			source = "Gateway"
 		}
 		meta := map[string]any{"agents-tower/source": source}
 		if tool["name"] == "advanced_search_todos" {
@@ -957,6 +976,14 @@ func executeMCPTool(
 	name string,
 	args map[string]any,
 ) (string, bool) {
+	if name == "get_current_datetime" {
+		now := time.Now().In(time.FixedZone("UTC+08:00", 8*60*60))
+		return resultProfiles[name].text(map[string]any{
+			"datetime": now.Format(time.RFC3339),
+			"weekday":  now.Weekday().String(),
+			"timezone": now.Location().String(),
+		}), false
+	}
 	if name == "my_todo_overview" {
 		return executeMyTodoOverview(ctx, cfg, mcpKey, acc, args)
 	}

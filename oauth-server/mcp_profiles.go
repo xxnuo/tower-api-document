@@ -7,6 +7,7 @@ import "strings"
 type resultProfile struct{ heading, fields string }
 
 var resultProfiles = map[string]resultProfile{
+	"get_current_datetime":                   {"当前日期时间", "datetime weekday timezone"},
 	"get_current_user":                       {"当前账号", "id nickname email gavatar"},
 	"list_teams":                             {"可访问的团队", "id name"},
 	"get_team":                               {"团队详情", "id name is_pro is_trial remaining_days_for_pro *"},
