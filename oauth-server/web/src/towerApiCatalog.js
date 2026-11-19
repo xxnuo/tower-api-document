@@ -93,10 +93,10 @@ export const TOWER_API_CATALOG = [
   {
     id: "todos-search",
     group: "任务",
-    name: "搜索任务（聚合/限流）",
+    name: "搜索任务（网页）",
     method: "GET",
     path: "/api/v1/todos/search",
-    defaultQuery: "keyword=&status=all&limit=20",
+    defaultQuery: "keyword=&team_id=&project_id=&member_id=&status=all&limit=20",
   },
   { id: "todos-list", group: "任务", name: "获取清单任务", method: "GET", path: "/api/v1/todolists/{todolist_id}/todos" },
   {

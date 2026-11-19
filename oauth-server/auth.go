@@ -111,7 +111,12 @@ func userLoginResults(cfg Config, userID int64) []LoginResult {
 	}
 	out := make([]LoginResult, 0, len(stored))
 	for i := range stored {
-		out = append(out, stored[i].ToLoginResult())
+		item := stored[i].ToLoginResult()
+		if sess, sessErr := cfg.Store.GetWebSession(stored[i].ID); sessErr == nil {
+			item.WebConnected = true
+			item.WebEmail = sess.Email
+		}
+		out = append(out, item)
 	}
 	return out
 }

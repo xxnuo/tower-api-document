@@ -608,7 +608,7 @@ func buildToolSchema(spec mcpToolSpec) map[string]any {
 }
 
 func totalMCPToolCount() int {
-	return len(towerMCPTools) + 3
+	return len(towerMCPTools) + 6
 }
 
 func isSafeTodoStateDelete(apiPath string) bool {
@@ -657,21 +657,21 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "按关键词聚合搜索任务（受限于 Tower Open API，按成员/项目/团队范围拉取后本地过滤，内置频率、并发与上游请求数限流）",
+			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。team_id、project_id、member_id 可选。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"keyword":    map[string]any{"type": "string", "description": "搜索关键词（匹配任务标题、描述或编号）"},
-					"member_id":  map[string]any{"type": "string", "description": "可选成员 ID（优先使用，速度最快）"},
-					"project_id": map[string]any{"type": "string", "description": "可选项目 ID（扫描该项目下的任务清单）"},
-					"team_id":    map[string]any{"type": "string", "description": "可选团队 ID（扫描该团队前 5 个项目；不传任何 ID 时默认搜索当前账号跨团队待办）"},
+					"keyword":    map[string]any{"type": "string", "description": "搜索关键词"},
+					"member_id":  map[string]any{"type": "string", "description": "可选成员 GUID"},
+					"project_id": map[string]any{"type": "string", "description": "可选项目 GUID"},
+					"team_id":    map[string]any{"type": "string", "description": "可选团队 GUID 或数字团队编号；不传时搜索已加入的团队"},
 					"status":     map[string]any{"type": "string", "description": "任务状态：all（默认）/ uncompleted / completed"},
 					"limit":      map[string]any{"type": "integer", "description": "最多返回条数（默认 20，最大 50）"},
 				},
 				"required": []string{"keyword"},
 			},
 			"annotations": map[string]any{
-				"title":           "聚合搜索任务（限流）",
+				"title":           "搜索任务",
 				"readOnlyHint":    true,
 				"destructiveHint": false,
 				"idempotentHint":  true,
@@ -702,6 +702,36 @@ func listMCPToolDefinitions() []map[string]any {
 			},
 		},
 	)
+	out = append(out, map[string]any{
+		"name":        "add_todo_project",
+		"description": "把任务添加到另一个项目的清单（网页「添加所属项目」）。不改变任务原有项目。省略 todolist_id 时使用目标项目的默认清单。需要网页登录。",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"todo_id":     map[string]any{"type": "string", "description": "任务 GUID"},
+				"project_id":  map[string]any{"type": "string", "description": "要添加的项目 GUID"},
+				"todolist_id": map[string]any{"type": "string", "description": "目标项目中的清单 GUID；省略时用默认清单"},
+			},
+			"required": []string{"todo_id", "project_id"},
+		},
+		"annotations": map[string]any{
+			"title": "添加任务所属项目", "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false,
+		},
+	}, map[string]any{
+		"name":        "remove_todo_project",
+		"description": "移除任务与某个所属项目的关联。不删除任务或项目。需要网页登录。",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"todo_id":    map[string]any{"type": "string", "description": "任务 GUID"},
+				"project_id": map[string]any{"type": "string", "description": "要移除的项目 GUID"},
+			},
+			"required": []string{"todo_id", "project_id"},
+		},
+		"annotations": map[string]any{
+			"title": "移除任务所属项目", "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false,
+		},
+	})
 	out = append(out, map[string]any{
 		"name":        "raw_request",
 		"description": "向 Tower /api/v1/* 发送自定义 HTTP 请求（用于自定义筛选参数或未单独封装的高级接口）",
@@ -1021,6 +1051,12 @@ func executeMCPTool(
 	}
 	if name == "search_todos" {
 		return executeSearchTodos(ctx, cfg, mcpKey, acc, args)
+	}
+	if name == "add_todo_project" {
+		return executeAddTodoProject(ctx, cfg, acc, args)
+	}
+	if name == "remove_todo_project" {
+		return executeRemoveTodoProject(ctx, cfg, acc, args)
 	}
 	if name == "upload_file" {
 		return executeUploadFile(ctx, cfg, mcpKey, acc, args)

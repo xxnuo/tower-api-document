@@ -179,6 +179,11 @@ export default function App() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [skillCopied, setSkillCopied] = useState(false);
+  const [webEmail, setWebEmail] = useState("");
+  const [webPassword, setWebPassword] = useState("");
+  const [webMessage, setWebMessage] = useState("");
+  const [webQR, setWebQR] = useState("");
+  const webPollRef = useRef(null);
   const syncedIdsRef = useRef(new Set());
 
   const activeTab = requestedTab === "admin" && authUser?.role !== "admin" ? "creds" : requestedTab;
@@ -207,6 +212,10 @@ export default function App() {
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => () => {
+    if (webPollRef.current) clearInterval(webPollRef.current);
   }, []);
 
   function handleAuthLoaded(data) {
@@ -558,6 +567,101 @@ export default function App() {
       setStatus("MCP 密钥已重置，请同步更新 Agent 客户端配置");
     } catch (err) {
       setError(`重置密钥失败: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function stopWebPoll() {
+    if (webPollRef.current) {
+      clearInterval(webPollRef.current);
+      webPollRef.current = null;
+    }
+  }
+
+  async function reloadAccounts() {
+    const res = await fetch("/api/accounts");
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    const next = buildStoreFromServerAccounts(data.accounts);
+    setStore((prev) => ({
+      activeId: next.items.some((item) => item.id === prev.activeId) ? prev.activeId : next.activeId,
+      items: next.items,
+    }));
+  }
+
+  async function handleWebEmailLogin(event) {
+    event.preventDefault();
+    if (!creds?.id) return;
+    setLoading(true);
+    setError("");
+    setWebMessage("");
+    try {
+      const res = await fetch("/api/accounts/web/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: creds.account_id || creds.id,
+          email: webEmail || user?.email || token?.email || "",
+          password: webPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+      setWebPassword("");
+      setWebQR("");
+      stopWebPoll();
+      await reloadAccounts();
+      setWebMessage(`网页已连接：${data.web_email}`);
+    } catch (err) {
+      setError(`网页登录失败: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function pollWebWechat(id) {
+    const res = await fetch(`/api/accounts/web/wechat/${id}`);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+    if (data.status === "connected") {
+      stopWebPoll();
+      setWebQR("");
+      await reloadAccounts();
+      setWebMessage(`网页已连接：${data.web_email || "微信扫码"}`);
+    } else if (data.status === "expired") {
+      stopWebPoll();
+      setWebQR("");
+      setWebMessage("二维码已过期，请重新获取");
+    } else if (data.status === "scanned") {
+      setWebMessage("已扫码，等待手机确认");
+    }
+  }
+
+  async function handleWebWechat() {
+    if (!creds?.id) return;
+    setLoading(true);
+    setError("");
+    setWebMessage("");
+    stopWebPoll();
+    try {
+      const res = await fetch("/api/accounts/web/wechat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: creds.account_id || creds.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error || !data.id) throw new Error(data.error || `HTTP ${res.status}`);
+      setWebQR(data.image);
+      setWebMessage("请用微信扫描二维码");
+      webPollRef.current = setInterval(() => {
+        pollWebWechat(data.id).catch((err) => {
+          stopWebPoll();
+          setError(`扫码登录失败: ${err.message}`);
+        });
+      }, 2000);
+    } catch (err) {
+      setError(`获取二维码失败: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1223,6 +1327,43 @@ export default function App() {
                         </div>
 
                         {status && <StatusBanner tone="success">{status}</StatusBanner>}
+
+                        <div className="rounded-lg border p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-semibold">Tower 网页登录</div>
+                              <div className="text-[11px] text-muted-foreground">
+                                {creds.web_connected
+                                  ? `已连接${creds.web_email ? ` · ${creds.web_email}` : ""}，供网页搜索和所属项目使用`
+                                  : "搜索和添加所属项目需要网页会话"}
+                              </div>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" disabled={loading} onClick={handleWebWechat}>
+                              微信扫码
+                            </Button>
+                          </div>
+                          <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleWebEmailLogin}>
+                            <Input
+                              type="email"
+                              value={webEmail}
+                              placeholder={user?.email || token?.email || "登录邮箱"}
+                              autoComplete="username"
+                              onChange={(event) => setWebEmail(event.target.value)}
+                            />
+                            <Input
+                              type="password"
+                              value={webPassword}
+                              placeholder="密码"
+                              autoComplete="current-password"
+                              onChange={(event) => setWebPassword(event.target.value)}
+                            />
+                            <Button type="submit" size="sm" disabled={loading || !webPassword}>
+                              邮箱登录
+                            </Button>
+                          </form>
+                          {webMessage && <div className="text-xs text-muted-foreground">{webMessage}</div>}
+                          {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
+                        </div>
 
                         <Card size="sm" className="shadow-none">
                           <CardHeader className="border-b">

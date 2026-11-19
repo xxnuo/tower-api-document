@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -169,6 +170,14 @@ func OpenStore(dbPath string) (*Store, error) {
 	CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS web_sessions (
+		account_id TEXT PRIMARY KEY,
+		cookies TEXT NOT NULL,
+		email TEXT NOT NULL DEFAULT '',
+		member_guid TEXT NOT NULL DEFAULT '',
+		updated_at INTEGER NOT NULL,
+		FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
 	);
 	`
 	if _, err := db.Exec(schema); err != nil {
@@ -927,4 +936,42 @@ func (s *Store) EnsureFreshToken(cfg Config, mcpKey string, force bool) (*Stored
 		return nil, errors.New("自动刷新 Tower Token 失败: " + formatOAuthError(tokenResp.Error, tokenResp.ErrorDescription))
 	}
 	return s.UpdateTokens(acc.ID, tokenResp)
+}
+
+func (s *Store) SaveWebSession(accountID string, cookies []webCookie, email, memberGUID string) error {
+	raw, err := json.Marshal(cookies)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Unix()
+	_, err = s.db.Exec(
+		`INSERT INTO web_sessions (account_id, cookies, email, member_guid, updated_at)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(account_id) DO UPDATE SET cookies = excluded.cookies, email = excluded.email,
+		 member_guid = excluded.member_guid, updated_at = excluded.updated_at`,
+		accountID, string(raw), email, memberGUID, now,
+	)
+	return err
+}
+
+func (s *Store) GetWebSession(accountID string) (webSessionRecord, error) {
+	var raw, email, member string
+	err := s.db.QueryRow(`SELECT cookies, email, member_guid FROM web_sessions WHERE account_id = ?`, accountID).Scan(&raw, &email, &member)
+	if errors.Is(err, sql.ErrNoRows) {
+		return webSessionRecord{}, errNoWebSession
+	}
+	if err != nil {
+		return webSessionRecord{}, err
+	}
+	if strings.TrimSpace(raw) == "" || raw == "null" || raw == "[]" {
+		return webSessionRecord{}, errNoWebSession
+	}
+	var cookies []webCookie
+	if err := json.Unmarshal([]byte(raw), &cookies); err != nil {
+		return webSessionRecord{}, err
+	}
+	if len(cookies) == 0 {
+		return webSessionRecord{}, errNoWebSession
+	}
+	return webSessionRecord{Cookies: cookies, Email: email, MemberGUID: member}, nil
 }

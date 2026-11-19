@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
-	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -80,10 +79,12 @@ type UserInfo struct {
 }
 
 type LoginResult struct {
-	AccountID string        `json:"account_id,omitempty"`
-	User      *UserInfo     `json:"user,omitempty"`
-	Token     TokenResponse `json:"token"`
-	MCPAPIKey string        `json:"mcp_api_key,omitempty"`
+	AccountID    string        `json:"account_id,omitempty"`
+	User         *UserInfo     `json:"user,omitempty"`
+	Token        TokenResponse `json:"token"`
+	MCPAPIKey    string        `json:"mcp_api_key,omitempty"`
+	WebConnected bool          `json:"web_connected,omitempty"`
+	WebEmail     string        `json:"web_email,omitempty"`
 }
 
 func loadDotEnv(path string) {
@@ -257,6 +258,9 @@ func newMux(cfg Config) http.Handler {
 		writeJSON(writer, http.StatusOK, map[string]any{"accounts": userLoginResults(cfg, u.ID)})
 	}))
 	mux.HandleFunc("POST /api/accounts/sync", requireAuth(cfg, handleSyncAccount(cfg)))
+	mux.HandleFunc("POST /api/accounts/web/email", requireAuth(cfg, handleWebEmailLogin(cfg)))
+	mux.HandleFunc("POST /api/accounts/web/wechat", requireAuth(cfg, handleWebWechatStart(cfg)))
+	mux.HandleFunc("GET /api/accounts/web/wechat/{id}", requireAuth(cfg, handleWebWechatPoll(cfg)))
 	mux.HandleFunc("POST /api/mcp-key/rotate", requireAuth(cfg, handleRotateMCPKey(cfg)))
 	mux.HandleFunc("DELETE /api/account", requireAuth(cfg, handleDeleteAccount(cfg)))
 	mux.HandleFunc("POST /api/verify", requireAuth(cfg, handleVerify(cfg)))
@@ -756,34 +760,32 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			started := time.Now()
 			qVals, _ := url.ParseQuery(rawQuery)
 			limit, _ := strconv.Atoi(qVals.Get("limit"))
-			params := searchTodosParams{
-				Keyword:   qVals.Get("keyword"),
-				TeamID:    qVals.Get("team_id"),
-				ProjectID: qVals.Get("project_id"),
-				MemberID:  qVals.Get("member_id"),
-				Status:    qVals.Get("status"),
-				Limit:     limit,
+			var statusCode int
+			var result map[string]any
+			var acc *StoredAccount
+			var accErr error
+			if cfg.Store == nil {
+				accErr = ErrAccountNotFound
+			} else {
+				acc, accErr = cfg.Store.GetByAuth(strings.TrimSpace(payload.AccessToken))
 			}
-			fetch := func(callCtx context.Context, path, query string) (int, []byte, error) {
-				target := cfg.BaseURL + path
-				if query != "" {
-					target += "?" + query
+			if accErr != nil {
+				statusCode, result = http.StatusNotFound, map[string]any{"error": "找不到对应 Tower 账号"}
+			} else {
+				payloadResult, searchErr := runWebSearch(req.Context(), cfg, acc, webSearchParams{
+					Keyword: qVals.Get("keyword"), TeamID: qVals.Get("team_id"), ProjectID: qVals.Get("project_id"),
+					MemberID: qVals.Get("member_id"), Status: qVals.Get("status"), Limit: limit,
+				})
+				if searchErr != nil {
+					statusCode = http.StatusBadGateway
+					if errors.Is(searchErr, errNoWebSession) {
+						statusCode = http.StatusConflict
+					}
+					result = map[string]any{"error": searchErr.Error()}
+				} else {
+					statusCode, result = http.StatusOK, payloadResult
 				}
-				upReq, reqErr := http.NewRequestWithContext(callCtx, http.MethodGet, target, nil)
-				if reqErr != nil {
-					return 0, nil, reqErr
-				}
-				upReq.Header.Set("Authorization", "Bearer "+token)
-				upReq.Header.Set("Accept", "application/json")
-				upResp, doErr := cfg.HTTPClient.Do(upReq)
-				if doErr != nil {
-					return 0, nil, doErr
-				}
-				defer upResp.Body.Close()
-				upBytes, readErr := io.ReadAll(io.LimitReader(upResp.Body, 2<<20))
-				return upResp.StatusCode, upBytes, readErr
 			}
-			statusCode, result := searchTodos(req.Context(), defaultTodoSearchLimiter, "proxy:"+strings.TrimSpace(payload.AccessToken), fetch, params)
 			writeJSON(writer, http.StatusOK, map[string]any{
 				"status":      statusCode,
 				"status_text": fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
