@@ -158,6 +158,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [skillCopied, setSkillCopied] = useState(false);
   const [loginTarget, setLoginTarget] = useState(null);
+  const [rebinding, setRebinding] = useState(false);
   const [grant, setGrant] = useState(null);
   const [webEmail, setWebEmail] = useState("");
   const [webPassword, setWebPassword] = useState("");
@@ -414,14 +415,16 @@ export default function App() {
     }
   }
 
-  function openTowerLogin(accountId) {
+  function openTowerLogin(accountId, rebind = false) {
+    const account = store.items.find((item) => item.id === accountId);
     stopWebPoll();
     setGrant(null);
     setCaptcha("");
-    setWebEmail(accountId ? user?.email || token?.email || "" : "");
+    setWebEmail(account?.user?.email || account?.token?.email || "");
     setWebPassword("");
     setWebMessage("");
     setWebQR("");
+    setRebinding(rebind);
     setLoginTarget(accountId);
   }
 
@@ -538,9 +541,9 @@ export default function App() {
       return;
     }
     if (result.status !== "connected") throw new Error("未确认账号绑定");
-    await reloadAccounts(result.account_id);
+    await reloadAccounts(rebinding ? undefined : result.account_id);
     setLoginTarget(null);
-    setStatus("Tower 账号已连接");
+    setStatus(rebinding ? "Tower 账号已重新绑定" : "Tower 账号已连接");
   }
 
   async function continueGrant(event) {
@@ -573,6 +576,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           account_id: loginTarget,
+          rebind: rebinding,
           email: webEmail,
           password: webPassword,
         }),
@@ -603,7 +607,7 @@ export default function App() {
       const res = await fetch("/api/accounts/web/wechat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: loginTarget }),
+        body: JSON.stringify({ account_id: loginTarget, rebind: rebinding }),
         signal,
       });
       const data = await res.json();
@@ -1068,6 +1072,9 @@ export default function App() {
                                 <DotsThreeIcon weight="bold" aria-hidden="true" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openTowerLogin(item.id, true)}>
+                                  重新绑定
+                                </DropdownMenuItem>
                                 <DropdownMenuItem variant="destructive" onClick={() => setConfirmAction({ type: "unlink", accountId: item.id })}>
                                   解除绑定
                                 </DropdownMenuItem>
@@ -1168,7 +1175,7 @@ export default function App() {
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{loginTarget ? "连接 Tower 网页" : "添加 Tower 账号"}</DialogTitle>
+            <DialogTitle>{rebinding ? "重新绑定 Tower 账号" : loginTarget ? "连接 Tower 网页" : "添加 Tower 账号"}</DialogTitle>
             <DialogDescription>{loginTarget ? "使用对应的 Tower 账号登录。" : "使用微信扫码或邮箱密码登录 Tower。"}</DialogDescription>
           </DialogHeader>
           {grant ? (

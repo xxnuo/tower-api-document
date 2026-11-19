@@ -16,6 +16,7 @@ import (
 
 type webGrant struct {
 	owner       int64
+	rebindID    string
 	client      *webClient
 	state, code string
 	consent     url.Values
@@ -204,7 +205,7 @@ func (g *webGrant) exchange(cfg Config, captcha string) (map[string]any, error) 
 	if user.ID == "" || email == "" || !strings.EqualFold(email, g.client.email) {
 		return nil, errors.New("网页与 API 账号身份不一致")
 	}
-	acc, err := cfg.Store.saveLogin(g.owner, user, token, &webSessionRecord{Cookies: g.client.jar.export(), Email: email})
+	acc, err := cfg.Store.saveLogin(g.owner, user, token, &webSessionRecord{Cookies: g.client.jar.export(), Email: email}, g.rebindID)
 	if err != nil {
 		return nil, err
 	}

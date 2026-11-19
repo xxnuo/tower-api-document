@@ -775,11 +775,11 @@ func (s *Store) SaveLogin(user *UserInfo, token TokenResponse) (*StoredAccount, 
 }
 
 func (s *Store) SaveLoginForUser(userID int64, user *UserInfo, token TokenResponse) (*StoredAccount, error) {
-	return s.saveLogin(userID, user, token, nil)
+	return s.saveLogin(userID, user, token, nil, "")
 }
 
 // Both credentials become visible together, including when refreshing an existing binding.
-func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web *webSessionRecord) (*StoredAccount, error) {
+func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web *webSessionRecord, rebindID string) (*StoredAccount, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
@@ -793,6 +793,9 @@ func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web
 	id := towerID
 	if userID > 0 {
 		id = fmt.Sprintf("u%d:%s", userID, towerID)
+	}
+	if rebindID != "" {
+		id = rebindID
 	}
 	createdAt := token.CreatedAt
 	if createdAt <= 0 {
@@ -818,6 +821,9 @@ func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web
 	existing, err := get(id)
 	if err != nil && !errors.Is(err, ErrAccountNotFound) {
 		return nil, err
+	}
+	if rebindID != "" && (existing == nil || existing.UserID != userID || existing.TowerID != towerID) {
+		return nil, errors.New("授权的 Tower 账号与要重新绑定的账号不一致，或原绑定已解除")
 	}
 	if existing == nil && userID > 0 {
 		if legacy, lErr := get(towerID); lErr == nil && (legacy.UserID == 0 || legacy.UserID == userID) {

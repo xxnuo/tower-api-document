@@ -14,6 +14,16 @@ import (
 func TestWebGrantConsentAndOTP(t *testing.T) {
 	const callback = "https://gateway.example/oauth2/callback"
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /users/account_sign_in", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<meta name="csrf-token" content="test">`)
+	})
+	mux.HandleFunc("POST /users/account_sign_in", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "session", Value: "rebound", Path: "/"})
+		fmt.Fprint(w, `{"success":true}`)
+	})
+	mux.HandleFunc("GET /launchpad/", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<input id="user-email" value="owner@example.com">`)
+	})
 	mux.HandleFunc("GET /oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `<form method="post" action="/oauth/authorize"><input type="hidden" name="client_id" value="app"><input type="hidden" name="redirect_uri" value="%s"><input type="hidden" name="state" value="%s"></form>`, callback, r.URL.Query().Get("state"))
 	})
@@ -47,7 +57,7 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.email = "owner@example.com"
-	result, err := finishWebLogin(context.Background(), cfg, 12, "", client)
+	result, err := finishWebLogin(context.Background(), cfg, 12, "", client, false)
 	if err != nil || result["status"] != "consent" {
 		t.Fatal(result, err)
 	}
@@ -81,5 +91,46 @@ func TestWebGrantConsentAndOTP(t *testing.T) {
 	}
 	if _, err := db.GetByID("u14:user1"); err == nil {
 		t.Fatal("unexpected account")
+	}
+
+	for _, towerID := range []string{"user2", "user1"} {
+		t.Run("rebind_"+towerID, func(t *testing.T) {
+			before, err := db.SaveLoginForUser(15, &UserInfo{ID: towerID, Email: "owner@example.com"}, TokenResponse{AccessToken: "old-" + towerID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("POST", "/", strings.NewReader(fmt.Sprintf(`{"account_id":%q,"rebind":true,"email":"owner@example.com","password":"fixture"}`, before.ID)))
+			req = req.WithContext(context.WithValue(req.Context(), authUserCtxKey{}, &User{ID: 15}))
+			rec := httptest.NewRecorder()
+			handleWebEmailLogin(cfg)(rec, req)
+			var reply struct{ Status, Challenge string }
+			if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil || rec.Code != 200 || reply.Status != "consent" {
+				t.Fatalf("rebind did not start OAuth: %s", rec.Body.String())
+			}
+			rec = send(15, reply.Challenge, `"approve":true`)
+			if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil || rec.Code != 200 || reply.Status != "otp" {
+				t.Fatalf("missing OTP challenge: %s", rec.Body.String())
+			}
+			rec = send(15, reply.Challenge, `"captcha":"123456"`)
+			after, err := db.GetByID(before.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if towerID == "user2" {
+				if rec.Code != 502 || after.AccessToken != before.AccessToken {
+					t.Fatalf("rebind accepted a different Tower ID: %s", rec.Body.String())
+				}
+				if _, err := db.GetByID("u15:user1"); err == nil {
+					t.Fatal("rebind created a different binding")
+				}
+				return
+			}
+			if rec.Code != 200 || after.AccessToken != "test-token" || after.MCPAPIKey != before.MCPAPIKey {
+				t.Fatalf("rebind failed to refresh the token and preserve the MCP key: %s", rec.Body.String())
+			}
+			if session, err := db.GetWebSession(before.ID); err != nil || len(session.Cookies) != 1 || session.Cookies[0].Value != "rebound" {
+				t.Fatalf("web session was not refreshed: %v", err)
+			}
+		})
 	}
 }

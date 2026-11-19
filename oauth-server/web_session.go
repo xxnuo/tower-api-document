@@ -817,6 +817,7 @@ type wechatPending struct {
 	mu        sync.Mutex
 	userID    int64
 	accountID string
+	rebind    bool
 	client    *webClient
 	uuid      string
 	last      string
@@ -834,6 +835,7 @@ func handleWebEmailLogin(cfg Config) http.HandlerFunc {
 		user := userFromContext(req.Context())
 		var payload struct {
 			AccountID string `json:"account_id"`
+			Rebind    bool   `json:"rebind"`
 			Email     string `json:"email"`
 			Password  string `json:"password"`
 		}
@@ -841,7 +843,7 @@ func handleWebEmailLogin(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
 			return
 		}
-		if payload.AccountID != "" {
+		if payload.AccountID != "" || payload.Rebind {
 			if _, err := webAccountForUser(cfg, user.ID, payload.AccountID); err != nil {
 				writeJSON(writer, 404, map[string]any{"error": "找不到这个 Tower 账号"})
 				return
@@ -858,7 +860,7 @@ func handleWebEmailLogin(cfg Config) http.HandlerFunc {
 			return
 		}
 		client.email = webEmail
-		result, err := finishWebLogin(req.Context(), cfg, user.ID, payload.AccountID, client)
+		result, err := finishWebLogin(req.Context(), cfg, user.ID, payload.AccountID, client, payload.Rebind)
 		writeGrant(writer, result, err)
 	}
 }
@@ -868,12 +870,13 @@ func handleWebWechatStart(cfg Config) http.HandlerFunc {
 		user := userFromContext(req.Context())
 		var payload struct {
 			AccountID string `json:"account_id"`
+			Rebind    bool   `json:"rebind"`
 		}
 		if err := json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&payload); err != nil {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
 			return
 		}
-		if payload.AccountID != "" {
+		if payload.AccountID != "" || payload.Rebind {
 			if _, err := webAccountForUser(cfg, user.ID, payload.AccountID); err != nil {
 				writeJSON(writer, 404, map[string]any{"error": "找不到这个 Tower 账号"})
 				return
@@ -922,7 +925,7 @@ func handleWebWechatStart(cfg Config) http.HandlerFunc {
 		}
 		id = strings.TrimPrefix(id, "at_sk-")
 		wechatPendingLogins.Store(id, &wechatPending{
-			userID: user.ID, accountID: payload.AccountID, client: client, uuid: uuid,
+			userID: user.ID, accountID: payload.AccountID, rebind: payload.Rebind, client: client, uuid: uuid,
 			redirect: redirect, state: state, expires: time.Now().Add(3 * time.Minute),
 		})
 		time.AfterFunc(3*time.Minute, func() { wechatPendingLogins.Delete(id) })
@@ -986,7 +989,7 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 		case "405":
 			pending.finishErr = finishWechat(req.Context(), pending, firstMatch(wxCodePattern, text))
 			if pending.finishErr == nil {
-				pending.result, pending.finishErr = finishWebLogin(req.Context(), cfg, user.ID, pending.accountID, pending.client)
+				pending.result, pending.finishErr = finishWebLogin(req.Context(), cfg, user.ID, pending.accountID, pending.client, pending.rebind)
 			}
 			writeGrant(writer, pending.result, pending.finishErr)
 		default:
@@ -1026,13 +1029,16 @@ func finishWechat(ctx context.Context, pending *wechatPending, code string) erro
 	return nil
 }
 
-func finishWebLogin(ctx context.Context, cfg Config, owner int64, accountID string, client *webClient) (map[string]any, error) {
+func finishWebLogin(ctx context.Context, cfg Config, owner int64, accountID string, client *webClient, rebind bool) (map[string]any, error) {
 	if accountID == "" {
 		return (&webGrant{owner: owner, client: client}).authorize(ctx, cfg)
 	}
 	acc, err := webAccountForUser(cfg, owner, accountID)
 	if err != nil {
 		return nil, err
+	}
+	if rebind {
+		return (&webGrant{owner: owner, client: client, rebindID: acc.ID}).authorize(ctx, cfg)
 	}
 	if acc.Email == "" || !strings.EqualFold(acc.Email, client.email) {
 		return nil, errors.New("网页登录邮箱与该 Tower 账号不一致")
