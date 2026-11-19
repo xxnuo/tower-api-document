@@ -771,6 +771,14 @@ func listMCPToolDefinitions() []map[string]any {
 			"openWorldHint":   false,
 		},
 	})
+	for _, tool := range out {
+		source := "API"
+		switch tool["name"] {
+		case "search_todos", "add_todo_project", "remove_todo_project":
+			source = "Web"
+		}
+		tool["_meta"] = map[string]any{"agents-tower/source": source}
+	}
 	return out
 }
 
