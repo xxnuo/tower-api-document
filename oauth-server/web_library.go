@@ -265,6 +265,33 @@ func (client *webClient) libraryPage(ctx context.Context, origin *url.URL, path,
 	return body, finalPath, nil
 }
 
+var teamResourcePath = regexp.MustCompile(`^/api/v1/teams/([0-9a-f]{32}|[1-9][0-9]*)/resources/([1-9][0-9]*)$`)
+var teamNumberPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+func resolveTeamResourcePath(ctx context.Context, cfg Config, acc *StoredAccount, path string) (string, error) {
+	parts := teamResourcePath.FindStringSubmatch(path)
+	if parts == nil {
+		return "", errors.New("team_id 须为团队 GUID 或数字编号，resource_id 须为正整数")
+	}
+	if !guidPattern.MatchString(parts[1]) {
+		return path, nil
+	}
+	client, err := useWebClient(ctx, cfg, acc)
+	if err != nil {
+		return "", fmt.Errorf("团队 GUID 转换需要网页登录，也可直接传网页数字编号：%w", err)
+	}
+	defer client.save()
+	page, err := client.get(ctx, "/teams/"+parts[1]+"/projects")
+	if err != nil {
+		return "", err
+	}
+	fields := hiddenValues(page)
+	if fields["team-guid"] != parts[1] || !teamNumberPattern.MatchString(fields["team-id"]) {
+		return "", errors.New("无法确认团队 GUID 对应的网页数字编号")
+	}
+	return "/api/v1/teams/" + fields["team-id"] + "/resources/" + parts[2], nil
+}
+
 // Resource lookup works with OAuth alone. Add document metadata when the account also has a web session.
 func enrichRepositoryResource(ctx context.Context, cfg Config, acc *StoredAccount, apiPath string, record map[string]any) {
 	if record["type"] != "tr_repository_documents" {

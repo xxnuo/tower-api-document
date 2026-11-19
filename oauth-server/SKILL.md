@@ -27,9 +27,9 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 
 按关键词或标签查询用 `search_todos`，须提供非空的 `keyword` 或 `tag`（标签可带 `#`）。提供有效标签时会忽略空白关键词。`member_guid`（即 Tower API 成员 ID）用于附加筛选，传入时只搜索该成员所属团队。可选参数还包括 `target_gid`、`category`、`sort`、`exclude_trash`。每次返回各搜索团队的一页，收到 `next_page` 时保留筛选条件并将其作为 `page` 继续。要按 API 项目 ID、团队或完成状态扫描时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
 
-查团队知识库时，先用 `list_teams` 取得团队 GUID，再用 `search_todos(team_id, keyword, category=18)`。将命中的 `team_id` 和 `url` 原样传给 `read_repository_item` 读取 Markdown 正文。浏览目录无须关键词，先用 `list_repositories(team_id)`，再用 `list_repository_items(team_id, url)` 逐层浏览。`category=7` 返回评论，`parent_type` 和 `parent_url` 指向被评论的资源。零命中仅表示当前页在 Tower 网页索引中没有匹配。
+查团队知识库时，先用 `list_teams` 取得团队 GUID，再用 `search_todos(team_id, keyword, category=18)`。知识库文档搜索省略团队和成员时默认使用当前网页团队；显式传 `all_teams=true` 可跨团队搜索。将命中的 `team_id` 和 `url` 原样传给 `read_repository_item` 读取 Markdown 正文。浏览目录无须关键词，先用 `list_repositories(team_id)`，再用 `list_repository_items(team_id, url)` 逐层浏览。`category=7` 返回评论，`parent_type` 和 `parent_url` 指向被评论的资源。零命中仅表示当前页在 Tower 网页索引中没有匹配。
 
-网页路径 `/teams/{team_number}/repository_documents/{resource_number}` 的两个数字是团队编号和团队内资源编号。`get_team_resource` 使用这两个数字取得 Open API 资源 GUID；搜索结果的 `id` 在映射成功时返回该 GUID。Tower 公开文档未提供原生知识库正文读取路径，`raw_request` 仅访问 Open API。目录项的 `id` 是网页资源编号，读取时使用 `url`。
+网页路径 `/teams/{team_number}/repository_documents/{resource_number}` 的两个数字是团队编号和团队内资源编号。`get_team_resource` 可使用团队 GUID（需网页登录）或团队数字编号，加上资源短编号取得 Open API 资源 GUID；搜索结果的 `id` 在映射成功时返回该 GUID。Tower 公开文档未提供原生知识库正文读取路径，`raw_request` 仅访问 Open API。目录项的 `id` 是网页资源编号，读取时使用 `url`。
 
 网页搜索的 `tag` 会命中 Tower 索引中的 `#标签` 内容；查询任务上的结构化标签请使用下面的 `label` 条件。
 

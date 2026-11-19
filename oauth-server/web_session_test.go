@@ -237,3 +237,32 @@ func TestRepositoryCommentSearchIdentity(t *testing.T) {
 		t.Fatal(rows[1])
 	}
 }
+
+func TestTeamResourcePathMapping(t *testing.T) {
+	const guid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/teams/"+guid+"/projects" {
+			t.Errorf("unexpected %s", r.URL.Path)
+		}
+		w.Write([]byte(`<input id="team-guid" value="` + guid + `"><input id="team-id" value="42">`))
+	}))
+	defer srv.Close()
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	cfg := testConfig(srv.URL)
+	cfg.Store = store
+	acc, err := store.SaveLogin(&UserInfo{ID: "test"}, TokenResponse{AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.SaveWebSession(acc.ID, []webCookie{{Name: "s", Value: "fixture", Path: "/"}}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	path, err := resolveTeamResourcePath(t.Context(), cfg, acc, "/api/v1/teams/"+guid+"/resources/123")
+	if err != nil || path != "/api/v1/teams/42/resources/123" {
+		t.Fatal(path, err)
+	}
+}

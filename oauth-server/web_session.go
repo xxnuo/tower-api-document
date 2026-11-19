@@ -305,9 +305,9 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 			if v != "1" && v != "2" {
 				return nil, errors.New("sort 须为 1 或 2")
 			}
-		case "exclude_trash":
+		case "exclude_trash", "all_teams":
 			if v != "true" && v != "false" {
-				return nil, errors.New("exclude_trash 须为布尔值")
+				return nil, fmt.Errorf("%s 须为布尔值", key)
 			}
 		default:
 			return nil, fmt.Errorf("未知搜索参数 %s", key)
@@ -316,6 +316,9 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 	}
 	if q.Get("keyword") == "" && q.Get("tag") == "" {
 		return nil, errors.New("须提供非空的 keyword 或 tag，member_guid 仅用于附加筛选")
+	}
+	if q.Get("all_teams") == "true" && (q.Get("team_id") != "" || q.Get("member_guid") != "") {
+		return nil, errors.New("all_teams 与 team_id、member_guid 互斥")
 	}
 	return q, nil
 }
@@ -600,6 +603,18 @@ func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, query url
 	teamID := query.Get("team_id")
 	query = maps.Clone(query)
 	query.Del("team_id")
+	allTeams := query.Get("all_teams") == "true"
+	query.Del("all_teams")
+	if query.Get("category") == "18" && !allTeams && teamID == "" && query.Get("member_guid") == "" {
+		page, err := client.get(ctx, "/launchpad/")
+		if err != nil {
+			return nil, err
+		}
+		teamID = hiddenValues(page)["team-guid"]
+		if !guidPattern.MatchString(teamID) {
+			return nil, errors.New("无法确认当前网页团队，请传 list_teams 返回的 team_id")
+		}
+	}
 	if member := query.Get("member_guid"); member != "" {
 		team, err := searchMemberTeam(ctx, cfg, acc, member)
 		if err != nil {

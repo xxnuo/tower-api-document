@@ -843,6 +843,22 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			})
 			return
 		}
+		var resourceAccount *StoredAccount
+		if method == http.MethodGet && teamResourcePath.MatchString(apiPath) {
+			if cfg.Store != nil {
+				resourceAccount, _ = cfg.Store.GetByAuth(strings.TrimSpace(payload.AccessToken))
+				if user := userFromContext(req.Context()); user != nil && resourceAccount != nil && user.ID != resourceAccount.UserID {
+					writeJSON(writer, http.StatusForbidden, map[string]any{"error": "账号不属于当前用户"})
+					return
+				}
+			}
+			path, err := resolveTeamResourcePath(req.Context(), cfg, resourceAccount, apiPath)
+			if err != nil {
+				writeJSON(writer, http.StatusOK, map[string]any{"status": http.StatusBadRequest, "body": map[string]any{"error": err.Error()}})
+				return
+			}
+			apiPath = path
+		}
 		if teamWriteDenied(req.Context(), cfg, token, method, apiPath) {
 			writeJSON(writer, http.StatusForbidden, map[string]any{"error": renameDenied})
 			return
@@ -895,6 +911,23 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 		var parsed any
 		if json.Unmarshal(respBytes, &parsed) != nil {
 			parsed = string(respBytes)
+		}
+		if resourceAccount != nil && resp.StatusCode == http.StatusOK {
+			doc, _ := parsed.(map[string]any)
+			row, _ := doc["data"].(map[string]any)
+			if row["type"] == "tr_repository_documents" {
+				extra := map[string]any{"type": row["type"]}
+				enrichRepositoryResource(req.Context(), cfg, resourceAccount, apiPath, extra)
+				delete(extra, "type")
+				attrs, _ := row["attributes"].(map[string]any)
+				if attrs == nil {
+					attrs = map[string]any{}
+					row["attributes"] = attrs
+				}
+				for k, v := range extra {
+					attrs[k] = v
+				}
+			}
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
 			"status":      resp.StatusCode,

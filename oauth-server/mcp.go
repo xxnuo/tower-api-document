@@ -113,10 +113,10 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "get_team_resource", Title: "按团队资源编号查询资源",
-		Desc:   "将网页团队数字编号和资源短编号映射为 Open API GUID 和资源类型。知识库文档元数据与正文请调用 read_repository_item。",
+		Desc:   "将团队 GUID（需网页登录）或网页团队数字编号与资源短编号映射为 Open API GUID 和资源类型。知识库文档元数据与正文请调用 read_repository_item。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/resources/{resource_id}",
 		Params: []mcpParam{
-			pPath("team_id", "URL 中的数字团队编号，如 750316"),
+			pPath("team_id", "list_teams 的 GUID 或 URL 中的数字团队编号，如 750316"),
 			pPath("resource_id", "团队内资源编号"),
 		},
 	},
@@ -700,6 +700,7 @@ func listMCPToolDefinitions() []map[string]any {
 					"page":          map[string]any{"type": "integer", "minimum": 1, "description": "页码，默认 1。保留其他参数，按 next_page 继续。每团队每页 20 条。"},
 					"category":      map[string]any{"type": "integer", "description": "Tower 网页内容类型，默认 2 任务。-1 全部、1 清单、4 文件或附件、7 评论、15 项目、18 知识库文档。"},
 					"target_gid":    map[string]any{"type": "string", "description": "网页项目或知识库 GID，如 gid://tower2/Project/123。省略时搜索所有项目。"},
+					"all_teams":     map[string]any{"type": "boolean", "description": "知识库文档默认搜索当前网页团队。设为 true 跨团队搜索，与 team_id 和 member_guid 互斥。"},
 					"team_id":       map[string]any{"type": "string", "description": "限定单个团队，传 list_teams 返回的团队 GUID。"},
 					"member_guid":   map[string]any{"type": "string", "pattern": "^[a-f0-9]{32}$", "description": "用于附加筛选的网页成员 GUID（即 Tower API 成员 ID）。须同时提供非空的 keyword 或 tag，仅搜索该成员所属团队。"},
 					"sort":          map[string]any{"type": "integer", "enum": []int{1, 2}, "description": "1 时间顺序（默认），2 相关度。"},
@@ -1412,6 +1413,12 @@ func callTowerForMCP(
 	var statusCode int
 	var respBytes []byte
 	var err error
+	if tool == "get_team_resource" {
+		apiPath, err = resolveTeamResourcePath(ctx, cfg, acc, apiPath)
+		if err != nil {
+			return err.Error(), true
+		}
+	}
 	switch tool {
 	case "list_member_assigned_todos", "list_member_created_todos":
 		statusCode, respBytes, err = loadMemberTodos(ctx, cfg, mcpKey, acc, apiPath)
