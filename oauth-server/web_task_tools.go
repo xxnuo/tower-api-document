@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools, gatewayLibraryTools)
+var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools, gatewayLibraryTools, gatewayScheduleTools)
 
 var projectTaskTools = []mcpToolSpec{
 	{
@@ -110,6 +110,8 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		return nil, err
 	}
 	switch spec.Name {
+	case "get_todo_schedule", "set_todo_estimated_time", "set_todo_milestone", "set_todo_recurrence":
+		return client.todoSchedule(ctx, pagePath, todoID, spec.Name, args)
 	case "edit_my_todo_comment":
 		return client.editMyComment(ctx, cfg, acc, pagePath, todoID, stringifyArg(args["comment_id"]), args["content"])
 	case "move_todo_in_project":
