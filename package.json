@@ -1,0 +1,11 @@
+{
+  "name": "tower-api-document",
+  "private": true,
+  "scripts": {
+    "build:docs": "node scripts/build-doc-index.mjs"
+  },
+  "devDependencies": {
+    "@geosuite/llms-txt-generator": "0.3.6",
+    "sitemap": "10.0.0"
+  }
+}

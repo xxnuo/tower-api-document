@@ -1,14 +1,18 @@
-.PHONY: install build-web build run dev test
+.PHONY: install build-docs build-web build run dev test
 
 AIR := $(shell command -v air 2>/dev/null || echo $(HOME)/go/bin/air)
 
 install:
+	pnpm install --frozen-lockfile
 	cd oauth-server/web && pnpm install
+
+build-docs:
+	pnpm build:docs
 
 build-web:
 	cd oauth-server/web && pnpm build
 
-build: build-web
+build: build-docs build-web
 	cd oauth-server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/agents-tower .
 	@if command -v upx >/dev/null 2>&1; then upx --best --lzma -q oauth-server/bin/agents-tower; fi
 
