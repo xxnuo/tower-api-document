@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMCPLogConsentAndAuditAccess(t *testing.T) {
@@ -108,6 +109,14 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 	if p := list(member, own+"?user_id=1"); p.Enabled || len(p.Logs) != 3 || p.Logs[0].Username != memberUser.Username {
 		t.Fatalf("personal history after opt-out: %+v", p)
 	}
+	// Both views must hide expired rows even between cleanup runs.
+	if _, err := store.db.Exec(`INSERT INTO mcp_operation_logs(user_id, username, tower_account, tool, started_at, duration_ms, success)
+		SELECT user_id, username, tower_account, tool, 1, duration_ms, success FROM mcp_operation_logs`); err != nil {
+		t.Fatal(err)
+	}
+	if len(list(member, own).Logs) != 3 || len(list(admin, audit).Logs) != 4 {
+		t.Fatal("expired logs are visible")
+	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +126,10 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 	}
 	cfg.Store = store
 	mux = newMux(cfg)
+	var stored int
+	if err := store.db.QueryRow("SELECT count(*) FROM mcp_operation_logs").Scan(&stored); err != nil || stored != 4 {
+		t.Fatalf("startup cleanup: stored=%d err=%v", stored, err)
+	}
 	if p := list(admin, audit); !p.Enabled || len(p.Logs) != 4 || p.Logs[0].Username != adminUser.Username {
 		t.Fatalf("audit after restart: %+v", p)
 	}
@@ -133,4 +146,42 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 		t.Fatalf("unexpected last page: %+v", last)
 	}
 	request("GET", own+"?before=invalid", "", member, "", 400)
+}
+
+func TestMCPLogExpiryAtMonthEnd(t *testing.T) {
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, pair := range [][2]string{
+		{"2023-11-30T09:45:01.123+08:00", "2024-02-29T09:45:01.123+08:00"},
+		{"2024-11-30T01:45:01.123+08:00", "2025-02-28T01:45:01.123+08:00"},
+		{"2025-12-31T23:59:59.999+08:00", "2026-03-31T23:59:59.999+08:00"},
+	} {
+		start, err := time.Parse(time.RFC3339Nano, pair[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		expires, err := time.Parse(time.RFC3339Nano, pair[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.db.Exec(`INSERT INTO mcp_operation_logs(user_id, username, tower_account, tool, started_at, duration_ms, success)
+			VALUES (1, 'member', 'tower', 'list_teams', ?, 0, 1)`, start.UnixMilli()); err != nil {
+			t.Fatal(err)
+		}
+		for _, test := range []struct {
+			now  time.Time
+			want int
+		}{{expires.Add(-time.Millisecond), 1}, {expires, 0}} {
+			if err := store.purgeExpiredMCPLogs(test.now); err != nil {
+				t.Fatal(err)
+			}
+			var got int
+			if err := store.db.QueryRow("SELECT count(*) FROM mcp_operation_logs").Scan(&got); err != nil || got != test.want {
+				t.Fatalf("cleanup at %v: rows=%d want=%d err=%v", test.now, got, test.want, err)
+			}
+		}
+	}
 }

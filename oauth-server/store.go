@@ -186,6 +186,7 @@ func OpenStore(dbPath string) (*Store, error) {
 		success BOOLEAN NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_mcp_operation_logs_user ON mcp_operation_logs(user_id, id);
+	CREATE INDEX IF NOT EXISTS idx_mcp_operation_logs_expiry ON mcp_operation_logs(` + mcpLogExpirySQL + `);
 	CREATE TABLE IF NOT EXISTS web_sessions (
 		account_id TEXT PRIMARY KEY,
 		cookies TEXT NOT NULL,
@@ -203,7 +204,12 @@ func OpenStore(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db}, nil
+	store := &Store{db: db}
+	if err := store.purgeExpiredMCPLogs(time.Now()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 func migrateAccountsSchema(db *sql.DB) error {

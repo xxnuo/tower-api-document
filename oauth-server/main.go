@@ -983,6 +983,14 @@ func main() {
 	defer store.Close()
 	cfg.Store = store
 
+	go func() {
+		for now := range time.Tick(time.Minute) {
+			if err := store.purgeExpiredMCPLogs(now); err != nil {
+				log.Printf("purge expired MCP operation logs: %v", err)
+			}
+		}
+	}()
+
 	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, db=%s)", cfg.ListenAddr, cfg.RedirectURI, cfg.DBPath)
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,

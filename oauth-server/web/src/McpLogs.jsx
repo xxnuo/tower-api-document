@@ -66,7 +66,7 @@ export default function McpLogs({ admin }) {
           <div className="space-y-1">
             <Label id="mcp-log-label" htmlFor="mcp-log-recording">记录我的 MCP 操作</Label>
             <p id="mcp-log-description" className="text-xs text-muted-foreground">
-              开启后记录此账户绑定的所有 Tower 账号的工具调用，关闭后保留已有记录。
+              开启后记录此账户绑定的所有 Tower 账号的工具调用。每条记录保留三个月，关闭后已有记录仍按期清理。
             </p>
           </div>
           <Switch id="mcp-log-recording" aria-labelledby="mcp-log-label" aria-describedby="mcp-log-description" checked={page?.enabled ?? false}

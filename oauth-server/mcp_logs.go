@@ -23,6 +23,14 @@ type mcpLogEntry struct {
 	Success      bool   `json:"success"`
 }
 
+// Use Beijing calendar months, clamping a missing day to the end of the target month.
+const mcpLogExpirySQL = "(unixepoch(started_at / 1000, 'unixepoch', '+8 hours', '+3 months', 'floor', '-8 hours') * 1000 + started_at % 1000)"
+
+func (s *Store) purgeExpiredMCPLogs(now time.Time) error {
+	_, err := s.db.Exec("DELETE FROM mcp_operation_logs WHERE "+mcpLogExpirySQL+" <= ?", now.UnixMilli())
+	return err
+}
+
 func (s *Store) mcpLogOptIn(userID int64) (int64, error) {
 	var id int64
 	err := s.db.QueryRow("SELECT id FROM mcp_log_opt_ins WHERE user_id = ?", userID).Scan(&id)
@@ -86,8 +94,8 @@ func handleMCPLogs(cfg Config, allUsers bool) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取日志设置失败"})
 			return
 		}
-		query := "SELECT id, username, tower_account, tool, started_at, duration_ms, success FROM mcp_operation_logs WHERE 1=1"
-		var args []any
+		query := "SELECT id, username, tower_account, tool, started_at, duration_ms, success FROM mcp_operation_logs WHERE " + mcpLogExpirySQL + " > ?"
+		args := []any{time.Now().UnixMilli()}
 		if !allUsers {
 			query += " AND user_id = ?"
 			args = append(args, userID)
