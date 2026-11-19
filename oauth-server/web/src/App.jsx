@@ -162,6 +162,7 @@ export default function App() {
   const [grant, setGrant] = useState(null);
   const [webEmail, setWebEmail] = useState("");
   const [webPassword, setWebPassword] = useState("");
+  const [webWechat, setWebWechat] = useState(false);
   const [webMessage, setWebMessage] = useState("");
   const [webQR, setWebQR] = useState("");
   const webPollRef = useRef(null);
@@ -422,6 +423,7 @@ export default function App() {
     setCaptcha("");
     setWebEmail(account?.user?.email || account?.token?.email || "");
     setWebPassword("");
+    setWebWechat(false);
     setWebMessage("");
     setWebQR("");
     setRebinding(rebind);
@@ -567,9 +569,13 @@ export default function App() {
     event.preventDefault();
     stopWebPoll();
     setWebQR("");
+    setWebMessage("");
+    if (webWechat) {
+      setWebWechat(false);
+      return;
+    }
     setLoading(true);
     setError("");
-    setWebMessage("");
     try {
       const res = await fetch("/api/accounts/web/email", {
         method: "POST",
@@ -599,6 +605,7 @@ export default function App() {
     const controller = new AbortController();
     webPollRef.current = controller;
     const { signal } = controller;
+    setWebWechat(true);
     setLoading(true);
     setError("");
     setWebQR("");
@@ -622,6 +629,7 @@ export default function App() {
         if (signal.aborted) return;
         if (!response.ok || result.error) throw new Error(result.error || `HTTP ${response.status}`);
         if (result.status === "connected" || result.challenge) {
+          setLoading(true);
           await acceptWebResult(result);
           return;
         }
@@ -1185,19 +1193,25 @@ export default function App() {
               <Button type="submit" disabled={loading}>{grant.status === "otp" ? "提交验证码" : "同意授权"}</Button>
             </form>
           ) : (
-            <>
-              <form className="space-y-3" onSubmit={handleWebEmailLogin}>
-                <Input type="email" required autoComplete="username" aria-label="Tower 邮箱" placeholder="Tower 邮箱" value={webEmail} onChange={e => setWebEmail(e.target.value)} />
-                <Input type="password" required autoComplete="current-password" aria-label="Tower 密码" placeholder="密码" value={webPassword} onChange={e => setWebPassword(e.target.value)} />
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={loading}>邮箱登录</Button>
-                  <Button type="button" variant="outline" disabled={loading} onClick={handleWebWechat}>微信扫码</Button>
+            <form className="space-y-3" onSubmit={handleWebEmailLogin}>
+              {webWechat ? (
+                <div className="flex min-h-40 flex-col items-center justify-center gap-2 text-center">
+                  {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
+                  <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>
                 </div>
-              </form>
-              {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
-            </>
+              ) : (
+                <>
+                  <Input type="email" required autoComplete="username" aria-label="Tower 邮箱" placeholder="Tower 邮箱" value={webEmail} onChange={e => setWebEmail(e.target.value)} />
+                  <Input type="password" required autoComplete="current-password" aria-label="Tower 密码" placeholder="密码" value={webPassword} onChange={e => setWebPassword(e.target.value)} />
+                </>
+              )}
+              <div className="flex gap-2">
+                <Button type="submit" variant={webWechat ? "outline" : "default"} disabled={loading}>邮箱登录</Button>
+                <Button type="button" variant={webWechat ? "default" : "outline"} aria-pressed={webWechat} disabled={loading} onClick={handleWebWechat}>微信扫码</Button>
+              </div>
+            </form>
           )}
-          {webMessage && <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>}
+          {webMessage && (grant || !webWechat) && <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>}
         </DialogContent>
       </Dialog>
 
