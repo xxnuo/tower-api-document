@@ -214,9 +214,11 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => () => {
-    if (webPollRef.current) clearInterval(webPollRef.current);
-  }, []);
+  useEffect(() => {
+    setWebQR("");
+    setWebMessage("");
+    return () => webPollRef.current?.abort();
+  }, [creds?.id, activeTab]);
 
   function handleAuthLoaded(data) {
     setAuthUser(data.user);
@@ -573,10 +575,8 @@ export default function App() {
   }
 
   function stopWebPoll() {
-    if (webPollRef.current) {
-      clearInterval(webPollRef.current);
-      webPollRef.current = null;
-    }
+    webPollRef.current?.abort();
+    webPollRef.current = null;
   }
 
   async function reloadAccounts() {
@@ -620,50 +620,56 @@ export default function App() {
     }
   }
 
-  async function pollWebWechat(id) {
-    const res = await fetch(`/api/accounts/web/wechat/${id}`);
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
-    if (data.status === "connected") {
-      stopWebPoll();
-      setWebQR("");
-      await reloadAccounts();
-      setWebMessage(`网页已连接：${data.web_email || "微信扫码"}`);
-    } else if (data.status === "expired") {
-      stopWebPoll();
-      setWebQR("");
-      setWebMessage("二维码已过期，请重新获取");
-    } else if (data.status === "scanned") {
-      setWebMessage("已扫码，等待手机确认");
-    }
-  }
-
   async function handleWebWechat() {
     if (!creds?.id) return;
+    stopWebPoll();
+    const controller = new AbortController();
+    webPollRef.current = controller;
+    const { signal } = controller;
     setLoading(true);
     setError("");
-    setWebMessage("");
-    stopWebPoll();
+    setWebQR("");
+    setWebMessage("正在获取二维码…");
     try {
       const res = await fetch("/api/accounts/web/wechat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account_id: creds.account_id || creds.id }),
+        signal,
       });
       const data = await res.json();
-      if (!res.ok || data.error || !data.id) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!res.ok || !data.id || !data.image) throw new Error(data.error || "没有收到二维码");
+      if (signal.aborted) return;
       setWebQR(data.image);
       setWebMessage("请用微信扫描二维码");
-      webPollRef.current = setInterval(() => {
-        pollWebWechat(data.id).catch((err) => {
-          stopWebPoll();
-          setError(`扫码登录失败: ${err.message}`);
-        });
-      }, 2000);
-    } catch (err) {
-      setError(`获取二维码失败: ${err.message}`);
-    } finally {
       setLoading(false);
+      while (!signal.aborted) {
+        const response = await fetch(`/api/accounts/web/wechat/${data.id}`, { signal, cache: "no-store" });
+        const result = await response.json();
+        if (signal.aborted) return;
+        if (!response.ok || result.error) throw new Error(result.error || `HTTP ${response.status}`);
+        if (result.status === "connected") {
+          setWebQR("");
+          await reloadAccounts();
+          if (!signal.aborted) setWebMessage("网页已连接");
+          return;
+        }
+        if (result.status === "cancelled") throw new Error("已在微信中取消登录");
+        if (result.status === "expired") throw new Error("二维码已过期，请重新获取");
+        if (result.status === "scanned") setWebMessage("已扫码，请在微信中确认");
+        else if (result.status !== "pending") throw new Error("无法识别扫码状态，请重新获取二维码");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    } catch (err) {
+      if (!signal.aborted) {
+        setWebQR("");
+        setWebMessage(`扫码登录失败：${err.message}`);
+      }
+    } finally {
+      if (webPollRef.current === controller) {
+        webPollRef.current = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -1361,7 +1367,7 @@ export default function App() {
                               邮箱登录
                             </Button>
                           </form>
-                          {webMessage && <div className="text-xs text-muted-foreground">{webMessage}</div>}
+                          {webMessage && <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>}
                           {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
                         </div>
 

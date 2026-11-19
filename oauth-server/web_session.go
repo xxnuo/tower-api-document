@@ -848,22 +848,25 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "expired"})
 			return
 		}
-		_, text, err := pending.client.request(req.Context(), http.MethodGet, "https://lp.open.weixin.qq.com/connect/l/qrconnect?uuid="+url.QueryEscape(pending.uuid), "", "")
+		status, text, err := pending.client.request(req.Context(), http.MethodGet, "https://lp.open.weixin.qq.com/connect/l/qrconnect?uuid="+url.QueryEscape(pending.uuid), "", "")
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": err.Error()})
 			return
 		}
 		codeMatch := wxCodePattern.FindStringSubmatch(text)
-		if codeMatch == nil {
-			writeJSON(writer, http.StatusOK, map[string]any{"status": "pending"})
+		if status != http.StatusOK || codeMatch == nil {
+			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "微信未返回有效的扫码状态，请重新获取二维码"})
 			return
 		}
 		switch codeMatch[1] {
 		case "408":
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "pending"})
-		case "402", "403":
-			writeJSON(writer, http.StatusOK, map[string]any{"status": "scanned"})
 		case "404":
+			writeJSON(writer, http.StatusOK, map[string]any{"status": "scanned"})
+		case "403":
+			wechatPendingLogins.Delete(req.PathValue("id"))
+			writeJSON(writer, http.StatusOK, map[string]any{"status": "cancelled"})
+		case "402":
 			wechatPendingLogins.Delete(req.PathValue("id"))
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "expired"})
 		case "405":
@@ -875,7 +878,7 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 			wechatPendingLogins.Delete(req.PathValue("id"))
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "connected", "web_email": pending.client.email})
 		default:
-			writeJSON(writer, http.StatusOK, map[string]any{"status": "pending"})
+			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "微信返回了未知的扫码状态，请重新获取二维码"})
 		}
 	}
 }
