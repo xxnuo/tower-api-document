@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HighlightedJSON } from "./ApiExplorer.jsx";
+import { HighlightedJSON, toOptions } from "./ApiExplorer.jsx";
 import { ModalDialog, SegmentedTabs, StatusBanner, UI } from "./ui.jsx";
 
 function resolveToolGroup(name) {
@@ -23,6 +23,15 @@ function tryParseJSON(text) {
   } catch {
     return { ok: false, val: text };
   }
+}
+
+function parseToolOptions(text) {
+  const parsed = tryParseJSON(text);
+  if (parsed.ok) return { options: toOptions(parsed.val), next: parsed.val?.next || parsed.val?.links?.next };
+  const options = Array.from(text.matchAll(/^  - ID (\S+)(?: \| (.*))?$/gm), ([, id, name]) => ({
+    id, label: (name || id).slice(0, 40),
+  }));
+  return { options, next: text.match(/^下一页：(\S+)$/m)?.[1] };
 }
 
 export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCreds }) {
@@ -89,10 +98,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     [effectiveKey, mcpServerURL, serverMeta?.sessionId]
   );
 
-  const harvestFromToolOutput = useCallback((toolName, text) => {
-    const opts = Array.from(text.matchAll(/^  - ID (\S+)(?: \| (.*))?$/gm), ([, id, name]) => ({
-      id, label: (name || id).slice(0, 40),
-    }));
+  const harvestFromToolOutput = useCallback((toolName, opts) => {
     if (opts.length === 0) return;
     let targetKey = "";
     if (toolName === "tower_list_teams") targetKey = "team_id";
@@ -112,17 +118,25 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
   }, []);
 
   const fetchToolOptions = useCallback(
-    async (targetKey, toolName, toolArgs = {}) => {
+    async (targetKey, toolName, toolArgs = {}, signal) => {
       if (!effectiveKey) return;
       setFetchingOpt(targetKey);
       try {
-        const { result } = await sendRPC("tools/call", {
-          name: toolName,
-          arguments: { ...toolArgs, page_size: 50 },
-        });
-        if (!result?.isError && result?.content?.[0]?.text) {
-          harvestFromToolOutput(toolName, result.content[0].text);
+        const options = new Map();
+        const nextLinks = new Set();
+        for (let page = 1; ; page++) {
+          const { result } = await sendRPC("tools/call", {
+            name: toolName,
+            arguments: { ...toolArgs, page_size: 50, ...(page > 1 ? { page } : {}) },
+          });
+          const text = result?.content?.[0]?.text;
+          if (signal?.aborted || result?.isError || !text) return;
+          const { options: pageOptions, next } = parseToolOptions(text);
+          pageOptions.forEach((option) => options.set(option.id, option));
+          if (toolName !== "tower_list_team_members" || !next || nextLinks.has(next)) break;
+          nextLinks.add(next);
         }
+        harvestFromToolOutput(toolName, [...options.values()]);
       } catch {
         // ignore silent option preload errors
       } finally {
@@ -201,7 +215,9 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     const teamId = String(formValues.team_id || "").trim();
     if (!effectiveKey || !serverMeta || !teamId) return;
     fetchToolOptions("project_id", "tower_list_projects", { team_id: teamId });
-    fetchToolOptions("member_id", "tower_list_team_members", { team_id: teamId });
+    const membersRequest = new AbortController();
+    fetchToolOptions("member_id", "tower_list_team_members", { team_id: teamId }, membersRequest.signal);
+    return () => membersRequest.abort();
   }, [effectiveKey, Boolean(serverMeta), formValues.team_id, fetchToolOptions]);
 
   useEffect(() => {
@@ -383,7 +399,10 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           delete next[unavailKey];
           return next;
         });
-        harvestFromToolOutput(activeTool.name, text);
+        const currentTeamId = String(formValues.team_id || "").trim();
+        if (activeTool.name !== "tower_list_team_members" || argsObj.team_id !== currentTeamId) {
+          harvestFromToolOutput(activeTool.name, parseToolOptions(text).options);
+        }
       }
       setCallResult({
         isError: isErr,
