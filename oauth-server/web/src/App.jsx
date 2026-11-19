@@ -8,6 +8,15 @@ const LEGACY_STORAGE_KEY = "tower_oauth_result_v1";
 const ACCOUNTS_STORAGE_KEY = "tower_oauth_accounts_v1";
 const THEME_STORAGE_KEY = "tower_oauth_theme_v1";
 
+function readTabFromHash() {
+  const tab = window.location.hash.slice(1);
+  return ["mcp", "explorer", "admin"].includes(tab) ? tab : "creds";
+}
+
+function navigateToTab(tab) {
+  window.location.hash = tab;
+}
+
 function getAccountId(data) {
   return (
     data?.account_id ||
@@ -148,7 +157,7 @@ export default function App() {
   const [confirmAction, setConfirmAction] = useState("");
   const [showSecrets, setShowSecrets] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [activeTab, setActiveTab] = useState("creds");
+  const [requestedTab, setRequestedTab] = useState(readTabFromHash);
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || "system");
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -156,7 +165,16 @@ export default function App() {
   const [skillCopied, setSkillCopied] = useState(false);
   const syncedIdsRef = useRef(new Set());
 
+  const activeTab = requestedTab === "admin" && authUser?.role !== "admin" ? "creds" : requestedTab;
   const creds = store.items.find((item) => item.id === store.activeId) || store.items[0] || null;
+
+  useEffect(() => {
+    function syncTab() {
+      setRequestedTab(readTabFromHash());
+    }
+    window.addEventListener("hashchange", syncTab);
+    return () => window.removeEventListener("hashchange", syncTab);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -303,7 +321,7 @@ export default function App() {
     }).catch(() => {});
     setAuthUser(null);
     setStore({ activeId: null, items: [] });
-    setActiveTab("creds");
+    window.location.replace("#creds");
     setError("");
     setStatus("");
   }
@@ -314,7 +332,7 @@ export default function App() {
     if (uname) removeQuickLoginEntry(uname);
     setAuthUser(null);
     setStore({ activeId: null, items: [] });
-    setActiveTab("creds");
+    window.location.replace("#creds");
     setError("");
     setStatus("");
   }
@@ -707,7 +725,7 @@ export default function App() {
             <button
               type="button"
               title="凭据中心"
-              onClick={() => setActiveTab("creds")}
+              onClick={() => navigateToTab("creds")}
               className={`flex w-full flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium leading-tight transition-all cursor-pointer ${
                 activeTab === "creds"
                   ? "bg-violet-600 text-white shadow-lg shadow-violet-600/40"
@@ -725,7 +743,7 @@ export default function App() {
             <button
               type="button"
               title="MCP 调试工具"
-              onClick={() => setActiveTab("mcp")}
+              onClick={() => navigateToTab("mcp")}
               className={`flex w-full flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium leading-tight transition-all cursor-pointer ${
                 activeTab === "mcp"
                   ? "bg-violet-600 text-white shadow-lg shadow-violet-600/40"
@@ -744,7 +762,7 @@ export default function App() {
             <button
               type="button"
               title="API 调试工具"
-              onClick={() => setActiveTab("explorer")}
+              onClick={() => navigateToTab("explorer")}
               className={`flex w-full flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium leading-tight transition-all cursor-pointer ${
                 activeTab === "explorer"
                   ? "bg-violet-600 text-white shadow-lg shadow-violet-600/40"
@@ -761,7 +779,7 @@ export default function App() {
               <button
                 type="button"
                 title="成员与权限管理"
-                onClick={() => setActiveTab("admin")}
+                onClick={() => navigateToTab("admin")}
                 className={`flex w-full flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium leading-tight transition-all cursor-pointer ${
                   activeTab === "admin"
                     ? "bg-violet-600 text-white shadow-lg shadow-violet-600/40"
@@ -894,7 +912,7 @@ export default function App() {
               <div className="inline-flex lg:hidden rounded-full border border-slate-200 bg-slate-100/80 p-0.5 dark:border-slate-800 dark:bg-slate-950">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("creds")}
+                  onClick={() => navigateToTab("creds")}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
                     activeTab === "creds"
                       ? "bg-violet-600 text-white shadow-xs"
@@ -905,7 +923,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab("mcp")}
+                  onClick={() => navigateToTab("mcp")}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
                     activeTab === "mcp"
                       ? "bg-violet-600 text-white shadow-xs"
@@ -916,7 +934,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab("explorer")}
+                  onClick={() => navigateToTab("explorer")}
                   className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
                     activeTab === "explorer"
                       ? "bg-violet-600 text-white shadow-xs"
@@ -928,7 +946,7 @@ export default function App() {
                 {authUser.role === "admin" && (
                   <button
                     type="button"
-                    onClick={() => setActiveTab("admin")}
+                    onClick={() => navigateToTab("admin")}
                     className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
                       activeTab === "admin"
                         ? "bg-violet-600 text-white shadow-xs"
@@ -1012,7 +1030,7 @@ export default function App() {
           mcpKey={mcpKey}
           mcpServerURL={mcpServerURL}
           accountLabel={towerAccountLabel}
-          onGoCreds={() => setActiveTab("creds")}
+              onGoCreds={() => navigateToTab("creds")}
         />
       ) : activeTab === "explorer" ? (
         <ApiExplorer
