@@ -38,7 +38,7 @@ Tower API 采用层级资源结构。除复合快捷工具外，常规操作请�
 3. **项目 -> 任务清单 -> 任务（Todo）**：
    - 调用 `tower_list_todolists`（传 `project_id`）获取 `todolist_id`。
    - 调用 `tower_list_todos`（传 `todolist_id`）查询任务，或调用 `tower_create_todo` 创建任务。
-   - 任务后续操作（评论、指派负责人 `tower_assign_todo`、设置截止时间 `tower_set_todo_due`、完成任务 `tower_complete_todo`）均使用 `todo_id`。
+   - 任务后续操作（评论、指派/移除负责人 `tower_assign_todo` / `tower_unassign_todo`、设置截止时间 `tower_update_todo_due`、完成任务 `tower_complete_todo`、重新打开任务 `tower_reopen_todo`）均使用 `todo_id`，默认对所有成员开放。
 4. **一步上传项目文件**：
    - 优先调用复合工具 `tower_upload_file`（传入 `team_id`、`project_id`、`filename` 以及 `content` 文本或 `content_base64`），服务端会自动完成计算 MD5、申请阿里云 OSS 签名、直传表单并关联到项目。
 
@@ -53,5 +53,5 @@ Tower API 采用层级资源结构。除复合快捷工具外，常规操作请�
 
 ## 4. 危险操作与硬删除保护
 
-- **服务端硬删除保护**：AgentsTower 默认拦截除 `tower_reopen_todo`（取消任务完成状态）和 `tower_unassign_todo`（移除任务负责人）之外的所有 `DELETE` 硬删除工具（如删除项目、删除清单、删除任务、删除文件）。若业务确实需要执行硬删除，需由系统管理员在 AgentsTower「成员管理」后台开启“允许 MCP 硬删除”开关。
-- **人工确认要求**：即使管理员开启了硬删除权限，Agent 在调用任何 `DELETE` 类工具或修改他人任务状态前，**必须先向用户列出目标资源名称与 ID 并获得明确确认**。
+- **任务完成与状态操作默认放行**：完成任务（`tower_complete_todo`）、重新打开已完成任务（`tower_reopen_todo`）以及指派/移除任务负责人（`tower_assign_todo` / `tower_unassign_todo`）属于常规协作操作，标记为非破坏性写入，默认允许所有成员直接调用。
+- **服务端硬删除保护**：AgentsTower 默认仅拦截真正删除资源的 `DELETE` 硬删除工具（删除项目、删除清单、删除任务、删除讨论、删除文件、删除工时）。若确实需要执行硬删除，需由系统管理员在 AgentsTower「成员管理」后台开启“允许 MCP 硬删除”开关，且执行前**必须先向用户列出目标资源名称与 ID 并获得明确确认**。

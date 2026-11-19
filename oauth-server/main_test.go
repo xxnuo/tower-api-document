@@ -832,6 +832,8 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 	var towerServerURL string
 	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		switch {
+		case req.Method == http.MethodPost && req.URL.Path == "/api/v1/todos/t1/completion":
+			writeJSON(writer, http.StatusOK, map[string]any{"completed": true})
 		case req.Method == http.MethodDelete && req.URL.Path == "/api/v1/todos/t1/completion":
 			writeJSON(writer, http.StatusOK, map[string]any{"reopened": true})
 		case req.Method == http.MethodDelete && req.URL.Path == "/api/v1/todos/t1":
@@ -906,7 +908,24 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 	// 2. Register first user (admin)
 	adminCookie, _, _ := registerTestUser(t, mux, "admin1", "pass123")
 
-	// 3. Default MCP hard-delete protection blocks tower_delete_todo, but allows tower_reopen_todo
+	// 3. Default MCP hard-delete protection blocks tower_delete_todo, but allows tower_complete_todo and tower_reopen_todo (non-destructive)
+	for _, def := range listMCPToolDefinitions() {
+		if def["name"] == "tower_complete_todo" || def["name"] == "tower_reopen_todo" || def["name"] == "tower_unassign_todo" {
+			ann, _ := def["annotations"].(map[string]any)
+			if ann["destructiveHint"] == true {
+				t.Fatalf("expected %s destructiveHint=false, got %v", def["name"], ann)
+			}
+		}
+	}
+
+	compReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_complete_todo","arguments":{"todo_id":"t1"}}}`))
+	compReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+	compRec := httptest.NewRecorder()
+	mux.ServeHTTP(compRec, compReq)
+	if !strings.Contains(compRec.Body.String(), "completed") || strings.Contains(compRec.Body.String(), `"isError":true`) {
+		t.Fatalf("expected complete_todo allowed, got: %s", compRec.Body.String())
+	}
+
 	delReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_delete_todo","arguments":{"todo_id":"t1"}}}`))
 	delReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	delRec := httptest.NewRecorder()

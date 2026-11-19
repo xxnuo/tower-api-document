@@ -613,15 +613,15 @@ func totalMCPToolCount() int {
 
 func isSafeTodoStateDelete(apiPath string) bool {
 	todoPath, isTodo := strings.CutPrefix(apiPath, "/api/v1/todos/")
-	id, action, _ := strings.Cut(todoPath, "/")
-	return isTodo && id != "" && id != "." && id != ".." && (action == "completion" || action == "assignment")
+	id, action, _ := strings.Cut(strings.TrimRight(todoPath, "/"), "/")
+	return isTodo && id != "" && id != "." && id != ".." && !strings.Contains(action, "/") && (action == "completion" || action == "assignment")
 }
 
 func listMCPToolDefinitions() []map[string]any {
 	out := make([]map[string]any, 0, totalMCPToolCount())
 	for _, spec := range towerMCPTools {
 		isReadOnly := spec.Method == http.MethodGet
-		isDestructive := spec.Method == http.MethodDelete
+		isDestructive := spec.Method == http.MethodDelete && !isSafeTodoStateDelete(spec.PathTemplate)
 		out = append(out, map[string]any{
 			"name":        spec.Name,
 			"description": spec.Desc,
@@ -906,7 +906,7 @@ func dispatchMCPMethod(
 				"name":    "AgentsTower",
 				"version": "1.0.0",
 			},
-			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 tower_my_todo_overview；一步上传文件到项目请调用 tower_upload_file。常规层级顺序：tower_list_teams 获取 team_id -> tower_list_projects 获取 project_id（或 tower_list_team_members 获取 member_id）-> tower_list_todolists 获取 todolist_id -> 查询或创建任务（todo）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（拦截删除项目/清单/任务/文件），执行任何 DELETE 类操作前请先向用户确认。",
+			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 tower_my_todo_overview；一步上传文件到项目请调用 tower_upload_file。常规层级顺序：tower_list_teams 获取 team_id -> tower_list_projects 获取 project_id（或 tower_list_team_members 获取 member_id）-> tower_list_todolists 获取 todolist_id -> 查询、创建或完成任务（tower_complete_todo / tower_reopen_todo 默认允许所有成员调用）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 		})
 
 	case "ping":
