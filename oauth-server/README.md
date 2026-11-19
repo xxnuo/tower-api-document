@@ -40,9 +40,28 @@ go run . user reset-password <username> <new-password>
 
 ## Docker 部署
 
+### 生产服务
+
+- 部署主机为 `xxnuo@kompiler.lan`，由当前用户通过 Podman Compose 管理。
+- 服务入口为 [http://kompiler.lan:18888](http://kompiler.lan:18888)，MCP 路径为 `/mcp`。宿主机端口 `18888` 映射到容器端口 `8888`。
+- 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.0`。
+- 远端 `.env` 从本机 `oauth-server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/agents-tower.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
+
+```bash
+ssh xxnuo@kompiler.lan
+cd /home/xxnuo/services/agentstower
+podman compose pull
+podman compose up -d --wait
+curl -fsS http://kompiler.lan:18888/api/healthz
+```
+
+升级时，在远端 `compose.yml` 中更新默认镜像标签，再执行上面的拉取和启动命令。发布新镜像可在仓库根目录运行 `make bump` 和 `make docker-push`。
+
+### 本地 Docker
+
 ```bash
 # 方式一：在仓库根目录使用 Docker Compose
-docker compose up -d --build
+docker compose up -d
 
 # 方式二：单独构建运行
 cd oauth-server && docker build -t agents-tower .
