@@ -4,8 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AgentsTower</title>
+    <script>
+      (function () {
+        try {
+          var theme = localStorage.getItem("tower_oauth_theme_v1") || "system";
+          var isDark =
+            theme === "dark" ||
+            (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (isDark) document.documentElement.classList.add("dark");
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body class="bg-[#f6f6fb] text-slate-900 antialiased dark:bg-[#0d0c14] dark:text-slate-100">
+  <body class="bg-[#FAFAFB] text-zinc-950 antialiased dark:bg-[#09090B] dark:text-zinc-100">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

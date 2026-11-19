@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BrandMark, SegmentedTabs, StatusBanner, UI } from "./ui.jsx";
 
 export const QUICK_LOGIN_STORAGE_KEY = "agents_tower_saved_logins_v1";
 
@@ -130,41 +131,36 @@ export default function AuthScreen({
   }
 
   return (
-    <div className="min-h-dvh flex flex-col justify-center items-center px-4 py-8 bg-[#f6f6fb] dark:bg-[#0d0c14]">
-      <div className="fixed top-4 right-4">
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          className="rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-xs hover:border-violet-300 hover:text-violet-600 cursor-pointer dark:border-slate-800 dark:bg-[#171522] dark:text-slate-300"
-        >
+    <div className="min-h-dvh flex flex-col justify-center items-center px-4 py-10 bg-[#FAFAFB] bg-tech-grid dark:bg-[#09090B]">
+      <div className="fixed top-4 right-4 z-10">
+        <button type="button" onClick={onToggleTheme} className={UI.btnSecondary}>
           主题：{themeLabel}
         </button>
       </div>
 
-      <div className="w-full max-w-md rounded-3xl border border-slate-100/90 bg-white p-6 sm:p-8 shadow-[0_8px_30px_-8px_rgba(15,23,42,0.08)] space-y-6 dark:border-slate-800/80 dark:bg-[#171522]">
-        <div className="flex flex-col items-center text-center space-y-2">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-600/30">
-            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="4" y="4" width="7" height="7" rx="2" />
-              <rect x="13" y="4" width="7" height="7" rx="2" opacity="0.7" />
-              <rect x="4" y="13" width="7" height="7" rx="2" opacity="0.7" />
-              <rect x="13" y="13" width="7" height="7" rx="2" />
-            </svg>
+      <div className={`w-full max-w-[400px] ${UI.panel} p-6 sm:p-7 space-y-6`}>
+        <div className="flex items-start justify-between gap-3 border-b border-zinc-100 pb-5 dark:border-zinc-800/80">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-zinc-950 text-white dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-950">
+              <BrandMark className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-base font-semibold tracking-tight text-zinc-950 dark:text-zinc-100">
+                AgentsTower
+              </h1>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Tower OAuth 凭据托管与 MCP 网关
+              </p>
+            </div>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            AgentsTower
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            团队成员 Tower OAuth 凭据托管与 AI Agent MCP 服务
-          </p>
         </div>
 
         {savedLogins.length > 0 && (
           <div className="space-y-2">
-            <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-              已保存账号 · 一键快捷登录
+            <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
+              已保存会话 · 快捷进入
             </div>
-            <div className="space-y-1.5">
+            <div className="divide-y divide-zinc-200 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50/70 dark:divide-zinc-800 dark:border-zinc-800 dark:bg-[#09090B]">
               {savedLogins.map((entry) => (
                 <div
                   key={entry.username}
@@ -174,39 +170,36 @@ export default function AuthScreen({
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") handleQuickSelect(entry);
                   }}
-                  className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-[#f8f8fc] px-3.5 py-2.5 transition-all hover:border-violet-400 hover:bg-violet-50/50 cursor-pointer dark:border-slate-800 dark:bg-[#0e0d16] dark:hover:border-violet-600"
+                  className="group flex items-center justify-between gap-3 px-3 py-2.5 transition-colors hover:bg-white cursor-pointer dark:hover:bg-[#141417]"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xs font-semibold text-white">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-zinc-200 bg-white font-mono text-xs font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
                       {(entry.display_name || entry.username).slice(0, 1).toUpperCase()}
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
                           {entry.display_name || entry.username}
                         </span>
-                        <span
-                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                            entry.role === "admin"
-                              ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-                              : "bg-slate-200/70 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                          }`}
-                        >
+                        <span className={entry.role === "admin" ? UI.badgeAdmin : UI.badgeNeutral}>
                           {entry.role === "admin" ? "管理员" : "成员"}
                         </span>
                       </div>
-                      <div className="truncate text-[11px] text-slate-400">@{entry.username}</div>
+                      <div className="truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                        @{entry.username}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
-                      快捷进入
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] font-medium text-zinc-500 group-hover:text-zinc-950 dark:text-zinc-400 dark:group-hover:text-zinc-100">
+                      进入
                     </span>
                     <button
                       type="button"
                       title="移除该快捷登录记录"
+                      aria-label={`移除 ${entry.username} 快捷登录记录`}
                       onClick={(event) => handleForgetEntry(event, entry)}
-                      className="rounded-full p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 cursor-pointer dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                      className="rounded p-1 text-zinc-400 transition-colors hover:bg-red-500/10 hover:text-red-600 cursor-pointer dark:hover:text-red-400"
                     >
                       <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -220,58 +213,39 @@ export default function AuthScreen({
           </div>
         )}
 
-        <div className="grid grid-cols-2 rounded-full border border-slate-200/80 bg-slate-100/70 p-1 dark:border-slate-800 dark:bg-[#0e0d16]">
-          <button
-            type="button"
-            onClick={() => {
-              setMode("login");
-              setError("");
-            }}
-            className={`rounded-full py-1.5 text-xs font-semibold transition-all cursor-pointer ${
-              mode === "login"
-                ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
-            }`}
-          >
-            账号登录
-          </button>
-          <button
-            type="button"
-            disabled={regClosed}
-            title={regClosed ? "管理员已关闭公开注册" : undefined}
-            onClick={() => {
-              if (regClosed) return;
-              setMode("register");
-              setError("");
-            }}
-            className={`rounded-full py-1.5 text-xs font-semibold transition-all cursor-pointer ${
-              mode === "register"
-                ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                : regClosed
-                  ? "text-slate-400 opacity-50 cursor-not-allowed dark:text-slate-600"
-                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
-            }`}
-          >
-            {regClosed ? "注册已关闭" : regNeedsInvite ? "凭邀请码注册" : "注册新账号"}
-          </button>
-        </div>
+        <SegmentedTabs
+          fullWidth
+          value={mode}
+          onChange={(nextMode) => {
+            setMode(nextMode);
+            setError("");
+          }}
+          options={[
+            { id: "login", label: "账号登录" },
+            {
+              id: "register",
+              label: regClosed ? "注册已关闭" : regNeedsInvite ? "凭邀请码注册" : "注册新账号",
+              disabled: regClosed,
+              title: regClosed ? "管理员已关闭公开注册" : undefined,
+            },
+          ]}
+        />
 
         {!hasUsers && mode === "register" && (
-          <div className="rounded-xl border border-violet-200 bg-violet-50/70 px-3.5 py-2.5 text-xs text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/40 dark:text-violet-300">
+          <StatusBanner tone="info">
             当前系统尚无注册用户，首个创建的账户将自动成为<strong>系统管理员</strong>。
-          </div>
+          </StatusBanner>
         )}
 
-        {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-            {error}
-          </div>
-        )}
+        {error && <StatusBanner tone="error">{error}</StatusBanner>}
 
         <form className="space-y-3.5" method="post" onSubmit={handleSubmit}>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">用户名</label>
+          <div className="space-y-1.5">
+            <label htmlFor="auth-username" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              用户名
+            </label>
             <input
+              id="auth-username"
               type="text"
               name="username"
               autoComplete="username"
@@ -280,47 +254,52 @@ export default function AuthScreen({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="例如: alice"
-              className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3.5 py-2.5 text-sm outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+              className={UI.input}
             />
           </div>
 
           {mode === "register" && (
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+            <div className="space-y-1.5">
+              <label htmlFor="auth-display-name" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
                 显示名称（可选）
               </label>
               <input
+                id="auth-display-name"
                 type="text"
                 name="display_name"
                 autoComplete="nickname"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="团队内展示的姓名或昵称"
-                className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3.5 py-2.5 text-sm outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                className={UI.input}
               />
             </div>
           )}
 
           {mode === "register" && regNeedsInvite && (
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
+            <div className="space-y-1.5">
+              <label htmlFor="auth-invite-code" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
                 注册邀请码
               </label>
               <input
+                id="auth-invite-code"
                 type="text"
                 name="invite_code"
                 required
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
                 placeholder="输入管理员提供的团队邀请码"
-                className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3.5 py-2.5 text-sm outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                className={UI.input}
               />
             </div>
           )}
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">密码</label>
+          <div className="space-y-1.5">
+            <label htmlFor="auth-password" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              密码
+            </label>
             <input
+              id="auth-password"
               type="password"
               name="password"
               autoComplete={mode === "login" ? "current-password" : "new-password"}
@@ -329,25 +308,21 @@ export default function AuthScreen({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={mode === "register" ? "设置至少 6 位登录密码" : "输入登录密码"}
-              className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3.5 py-2.5 text-sm outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+              className={UI.input}
             />
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer select-none dark:text-slate-400">
+          <label className="flex items-center gap-2 pt-0.5 text-xs text-zinc-600 cursor-pointer select-none dark:text-zinc-400">
             <input
               type="checkbox"
               checked={rememberQuick}
               onChange={(e) => setRememberQuick(e.target.checked)}
-              className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+              className="h-3.5 w-3.5 rounded border-zinc-300 accent-zinc-950 dark:border-zinc-700 dark:accent-zinc-100"
             />
-            <span>在此浏览器保存登录信息以便下次一键快捷登录</span>
+            <span>在此浏览器保存会话以便下次快捷登录</span>
           </label>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-full bg-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm shadow-violet-600/25 hover:bg-violet-700 disabled:opacity-60 cursor-pointer"
-          >
+          <button type="submit" disabled={loading} className={`${UI.btnPrimary} w-full py-2.5 text-xs font-semibold`}>
             {loading ? "处理中..." : mode === "register" ? "注册并进入 AgentsTower" : "登录 AgentsTower"}
           </button>
         </form>

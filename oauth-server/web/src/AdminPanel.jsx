@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ModalDialog, StatusBanner, UI } from "./ui.jsx";
 
 export default function AdminPanel({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -139,290 +140,275 @@ export default function AdminPanel({ currentUser }) {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-7 sm:py-6 space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            成员与权限管理
-          </h2>
-          <p className="mt-0.5 text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            首个注册账号默认为管理员；也可通过命令行 <code className="rounded bg-slate-200/70 px-1.5 py-0.5 font-mono text-xs dark:bg-slate-800">agents-tower admin grant &lt;username&gt;</code> 手动授权。
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={loadUsers}
-          disabled={loading}
-          className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer dark:border-slate-700 dark:bg-[#171522] dark:text-slate-200"
-        >
-          {loading ? "加载中..." : "刷新成员列表"}
-        </button>
-      </div>
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-          {error}
-        </div>
-      )}
-      {status && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
-          {status}
-        </div>
-      )}
-
-      <form
-        onSubmit={handleSaveSettings}
-        className="rounded-2xl border border-slate-100/90 bg-white p-4 sm:p-5 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] space-y-4 dark:border-slate-800/80 dark:bg-[#171522]"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto w-full max-w-[1360px] px-4 py-5 sm:px-6 sm:py-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-4 dark:border-zinc-800">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              系统安全与准入策略
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              控制新成员注册方式与 Agent MCP 硬删除接口保护（拦截删除项目、清单、任务与文件）。
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-100">
+              成员与权限管理
+            </h1>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              首个注册账号默认为管理员；也可通过命令行{" "}
+              <code className="rounded border border-zinc-200 bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                agents-tower admin grant &lt;username&gt;
+              </code>{" "}
+              手动授权。
             </p>
           </div>
-          <button
-            type="submit"
-            disabled={savingSettings}
-            className="rounded-full bg-violet-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-60 cursor-pointer"
-          >
-            {savingSettings ? "保存中..." : "保存策略"}
+          <button type="button" onClick={loadUsers} disabled={loading} className={UI.btnSecondary}>
+            {loading ? "加载中..." : "刷新成员列表"}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              新用户注册准入
-            </label>
-            <select
-              value={regMode}
-              onChange={(e) => setRegMode(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-2 text-xs text-slate-800 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
-            >
-              <option value="open">开放注册（团队内网默认）</option>
-              <option value="invite">仅凭邀请码注册</option>
-              <option value="closed">关闭公开注册</option>
-            </select>
+        {error && <StatusBanner tone="error">{error}</StatusBanner>}
+        {status && <StatusBanner tone="success">{status}</StatusBanner>}
+
+        <form onSubmit={handleSaveSettings} className={`${UI.panel} p-4 sm:p-5 space-y-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 pb-3.5 dark:border-zinc-800/80">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">
+                系统安全与准入策略
+              </h2>
+              <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                控制新成员注册方式与 Agent MCP 硬删除接口保护（拦截删除项目、清单、任务与文件）。
+              </p>
+            </div>
+            <button type="submit" disabled={savingSettings} className={UI.btnPrimary}>
+              {savingSettings ? "保存中..." : "保存策略"}
+            </button>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              团队注册邀请码（仅邀请码模式生效）
-            </label>
-            <input
-              type="text"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              disabled={regMode !== "invite"}
-              placeholder={regMode === "invite" ? "设置必填邀请码" : "切换为邀请码模式后可填"}
-              className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-2 text-xs text-slate-800 outline-none focus:border-violet-500 disabled:opacity-50 dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
-            />
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            <div className="space-y-1.5">
+              <label htmlFor="admin-reg-mode" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                新用户注册准入
+              </label>
+              <select
+                id="admin-reg-mode"
+                value={regMode}
+                onChange={(e) => setRegMode(e.target.value)}
+                className={`${UI.inputSm} h-[34px]`}
+              >
+                <option value="open">开放注册（团队内网默认）</option>
+                <option value="invite">仅凭邀请码注册</option>
+                <option value="closed">关闭公开注册</option>
+              </select>
+            </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-              MCP 硬删除接口权限
-            </label>
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-2 text-xs text-slate-700 cursor-pointer dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-300">
+            <div className="space-y-1.5">
+              <label htmlFor="admin-invite-code" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                团队注册邀请码（仅邀请码模式生效）
+              </label>
               <input
-                type="checkbox"
-                checked={allowMCPDelete}
-                onChange={(e) => setAllowMCPDelete(e.target.checked)}
-                className="rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                id="admin-invite-code"
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                disabled={regMode !== "invite"}
+                placeholder={regMode === "invite" ? "设置必填邀请码" : "切换为邀请码模式后可填"}
+                className={`${UI.inputSm} h-[34px] font-mono disabled:opacity-50`}
               />
-              <span>
-                {allowMCPDelete
-                  ? "已允许 MCP 执行硬删除（高风险）"
-                  : "默认拦截硬删除（仅允许取消完成/解绑负责人）"}
-              </span>
-            </label>
-          </div>
-        </div>
-      </form>
+            </div>
 
-      <div className="rounded-2xl border border-slate-100/90 bg-white shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] overflow-hidden dark:border-slate-800/80 dark:bg-[#171522]">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead className="border-b border-slate-100 bg-slate-50/70 text-xs font-medium text-slate-500 dark:border-slate-800 dark:bg-[#12101b] dark:text-slate-400">
-              <tr>
-                <th className="px-4 py-3">ID</th>
-                <th className="px-4 py-3">账户</th>
-                <th className="px-4 py-3">角色</th>
-                <th className="px-4 py-3">已绑定 Tower 账号</th>
-                <th className="px-4 py-3">注册时间</th>
-                <th className="px-4 py-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-              {users.map((u) => {
-                const isSelf = u.id === currentUser?.id;
-                const isAdmin = u.role === "admin";
-                return (
-                  <tr key={u.id} className="hover:bg-slate-50/60 dark:hover:bg-white/[0.02]">
-                    <td className="px-4 py-3.5 font-mono text-xs text-slate-400">#{u.id}</td>
-                    <td className="px-4 py-3.5">
-                      <div className="font-medium text-slate-900 dark:text-slate-100">
-                        {u.display_name || u.username}
-                        {isSelf && (
-                          <span className="ml-1.5 text-[11px] font-normal text-slate-400">(当前登录)</span>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                MCP 硬删除接口权限
+              </span>
+              <label className="flex min-h-[34px] items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50/70 px-3 py-1.5 text-xs text-zinc-700 cursor-pointer dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={allowMCPDelete}
+                  onChange={(e) => setAllowMCPDelete(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-zinc-300 accent-zinc-950 dark:border-zinc-700 dark:accent-zinc-100"
+                />
+                <span>
+                  {allowMCPDelete
+                    ? "已允许 MCP 执行硬删除（高风险）"
+                    : "默认拦截硬删除（仅允许取消完成/解绑）"}
+                </span>
+              </label>
+            </div>
+          </div>
+        </form>
+
+        <div className={`${UI.panel} overflow-hidden`}>
+          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              成员名册
+            </h2>
+            <span className="font-mono text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+              共 {users.length} 人
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-zinc-200 bg-zinc-50/80 text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/50 dark:text-zinc-400">
+                <tr>
+                  <th className="px-4 py-2.5">ID</th>
+                  <th className="px-4 py-2.5">账户</th>
+                  <th className="px-4 py-2.5">角色</th>
+                  <th className="px-4 py-2.5">已绑定 Tower 账号</th>
+                  <th className="px-4 py-2.5">注册时间</th>
+                  <th className="px-4 py-2.5 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/80">
+                {users.map((u) => {
+                  const isSelf = u.id === currentUser?.id;
+                  const isAdmin = u.role === "admin";
+                  return (
+                    <tr key={u.id} className="transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40">
+                      <td className="px-4 py-3 font-mono tabular-nums text-zinc-400 dark:text-zinc-500">
+                        #{u.id}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-zinc-950 dark:text-zinc-100">
+                          {u.display_name || u.username}
+                          {isSelf && (
+                            <span className="ml-1.5 text-[11px] font-normal text-zinc-400">(当前登录)</span>
+                          )}
+                        </div>
+                        <div className="font-mono text-[11px] text-zinc-400 dark:text-zinc-500">@{u.username}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={isAdmin ? UI.badgeAdmin : UI.badgeNeutral}>
+                          {isAdmin ? "管理员" : "普通用户"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
+                        {u.tower_count > 0 ? (
+                          <span>
+                            <span className="font-mono tabular-nums">{u.tower_count}</span> 个 ({u.tower_emails})
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400 dark:text-zinc-500">未绑定</span>
                         )}
-                      </div>
-                      <div className="font-mono text-xs text-slate-400">@{u.username}</div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          isAdmin
-                            ? "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300"
-                            : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                        }`}
-                      >
-                        {isAdmin ? "管理员" : "普通用户"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-300">
-                      {u.tower_count > 0 ? `${u.tower_count} 个 (${u.tower_emails})` : "未绑定"}
-                    </td>
-                    <td className="px-4 py-3.5 text-xs text-slate-400">
-                      {new Date(u.created_at * 1000).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3.5 text-right">
-                      <div className="inline-flex flex-wrap justify-end gap-1.5">
-                        {isAdmin ? (
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-zinc-400 dark:text-zinc-500">
+                        {new Date(u.created_at * 1000).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex flex-wrap justify-end gap-1.5">
+                          {isAdmin ? (
+                            <button
+                              type="button"
+                              disabled={isSelf}
+                              onClick={() => setConfirmTarget({ type: "revoke", user: u })}
+                              className={`${UI.btnSecondary} px-2.5 py-1 text-[11px]`}
+                            >
+                              取消管理员
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleRoleChange(u, "admin")}
+                              className={`${UI.btnSecondary} px-2.5 py-1 text-[11px]`}
+                            >
+                              设为管理员
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResetTarget(u);
+                              setNewPassword("");
+                            }}
+                            className={`${UI.btnSecondary} px-2.5 py-1 text-[11px]`}
+                          >
+                            重置密码
+                          </button>
                           <button
                             type="button"
                             disabled={isSelf}
-                            onClick={() => setConfirmTarget({ type: "revoke", user: u })}
-                            className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:border-amber-300 hover:text-amber-700 disabled:opacity-40 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            onClick={() => setConfirmTarget({ type: "delete", user: u })}
+                            className={`${UI.btnDangerOutline} px-2.5 py-1 text-[11px]`}
                           >
-                            取消管理员
+                            删除
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleRoleChange(u, "admin")}
-                            className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 hover:bg-violet-100 cursor-pointer dark:border-violet-800 dark:bg-violet-950/60 dark:text-violet-300"
-                          >
-                            设为管理员
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setResetTarget(u);
-                            setNewPassword("");
-                          }}
-                          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        >
-                          重置密码
-                        </button>
-                        <button
-                          type="button"
-                          disabled={isSelf}
-                          onClick={() => setConfirmTarget({ type: "delete", user: u })}
-                          className="rounded-full border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-40 cursor-pointer dark:border-red-900/60 dark:bg-slate-800 dark:text-red-400"
-                        >
-                          删除
-                        </button>
-                      </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!loading && users.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-xs text-zinc-400">
+                      暂无成员记录
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {confirmTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-black/60"
-          onClick={() => setConfirmTarget(null)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4 dark:border-slate-700 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              {confirmTarget.type === "delete" ? "确认删除用户" : "确认取消管理员权限"}
-            </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {confirmTarget.type === "delete"
-                ? `确定删除账户「${confirmTarget.user.username}」吗？该用户的服务端会话与绑定的全部 Tower 凭据/MCP 密钥将被彻底删除。`
-                : `确定将「${confirmTarget.user.username}」降为普通用户吗？`}
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmTarget(null)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  confirmTarget.type === "delete"
-                    ? handleDeleteUser(confirmTarget.user)
-                    : handleRoleChange(confirmTarget.user, "user")
-                }
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 cursor-pointer"
-              >
-                确认执行
-              </button>
-            </div>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
-      )}
 
-      {resetTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-black/60"
-          onClick={() => setResetTarget(null)}
+        <ModalDialog
+          open={Boolean(confirmTarget)}
+          onClose={() => setConfirmTarget(null)}
+          title={confirmTarget?.type === "delete" ? "确认删除用户" : "确认取消管理员权限"}
         >
-          <form
-            role="dialog"
-            aria-modal="true"
-            onSubmit={handleResetPassword}
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4 dark:border-slate-700 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              重置密码 · {resetTarget.username}
-            </h3>
-            <input
-              type="password"
-              required
-              minLength={6}
-              autoFocus
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="输入至少 6 位新密码"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setResetTarget(null)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              >
-                取消
-              </button>
-              <button
-                type="submit"
-                className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 cursor-pointer"
-              >
-                保存新密码
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          {confirmTarget && (
+            <>
+              <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                {confirmTarget.type === "delete"
+                  ? `确定删除账户「${confirmTarget.user.username}」吗？该用户的服务端会话与绑定的全部 Tower 凭据/MCP 密钥将被彻底删除。`
+                  : `确定将「${confirmTarget.user.username}」降为普通用户吗？`}
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setConfirmTarget(null)} className={UI.btnSecondary}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    confirmTarget.type === "delete"
+                      ? handleDeleteUser(confirmTarget.user)
+                      : handleRoleChange(confirmTarget.user, "user")
+                  }
+                  className={UI.btnDanger}
+                >
+                  确认执行
+                </button>
+              </div>
+            </>
+          )}
+        </ModalDialog>
+
+        <ModalDialog
+          open={Boolean(resetTarget)}
+          onClose={() => setResetTarget(null)}
+          title={resetTarget ? `重置密码 · ${resetTarget.username}` : ""}
+        >
+          {resetTarget && (
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-1.5">
+                <label htmlFor="admin-reset-pw" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                  新密码（至少 6 位）
+                </label>
+                <input
+                  id="admin-reset-pw"
+                  type="password"
+                  required
+                  minLength={6}
+                  autoFocus
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="输入至少 6 位新密码"
+                  className={UI.input}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button type="button" onClick={() => setResetTarget(null)} className={UI.btnSecondary}>
+                  取消
+                </button>
+                <button type="submit" className={UI.btnPrimary}>
+                  保存新密码
+                </button>
+              </div>
+            </form>
+          )}
+        </ModalDialog>
+      </div>
     </div>
   );
 }

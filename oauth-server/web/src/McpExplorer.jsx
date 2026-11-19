@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HighlightedJSON, toOptions } from "./ApiExplorer.jsx";
+import { ModalDialog, SegmentedTabs, StatusBanner, UI } from "./ui.jsx";
 
 function resolveToolGroup(name) {
   if (name === "tower_get_current_user") return "用户";
@@ -33,10 +34,10 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
   const [pingLatency, setPingLatency] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [modeFilter, setModeFilter] = useState("all"); // all | read | write | danger
+  const [modeFilter, setModeFilter] = useState("all");
   const [selectedName, setSelectedName] = useState("tower_get_current_user");
 
-  const [inputMode, setInputMode] = useState("form"); // form | json
+  const [inputMode, setInputMode] = useState("form");
   const [formValues, setFormValues] = useState({});
   const [rawArgsText, setRawArgsText] = useState("{}");
   const [paramOptions, setParamOptions] = useState({});
@@ -44,7 +45,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   const [calling, setCalling] = useState(false);
   const [callError, setCallError] = useState("");
-  const [resultView, setResultView] = useState("content"); // content | rpc
+  const [resultView, setResultView] = useState("content");
   const [callResult, setCallResult] = useState(null);
   const [unavailableTools, setUnavailableTools] = useState({});
   const [confirmDanger, setConfirmDanger] = useState(false);
@@ -485,58 +486,46 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-12">
-      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-slate-200/70 bg-white dark:border-slate-800/80 dark:bg-[#171522]">
-        <div className="shrink-0 p-3.5 sm:p-4 border-b border-slate-100 dark:border-slate-800 space-y-2.5">
+      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-[#111113]">
+        <div className="shrink-0 p-3.5 border-b border-zinc-200 dark:border-zinc-800 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
               MCP 工具目录 (tools/list)
             </h2>
-            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:bg-violet-950/70 dark:text-violet-300">
+            <span className={`${UI.badgeNeutral} font-mono tabular-nums`}>
               {tools.length}
             </span>
           </div>
           <input
             type="text"
+            aria-label="搜索 MCP 工具"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索工具名、标题或功能描述..."
-            className="w-full rounded-xl border border-slate-200/90 bg-[#f8f8fc] px-3 py-1.5 text-sm outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+            className={UI.inputSm}
           />
-          <div className="flex flex-wrap gap-1">
-            {[
+          <SegmentedTabs
+            fullWidth
+            size="xs"
+            value={modeFilter}
+            onChange={setModeFilter}
+            options={[
               { id: "all", label: "全部" },
               { id: "read", label: "只读" },
-              { id: "write", label: "写操作" },
-              { id: "danger", label: "危险删除" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setModeFilter(tab.id)}
-                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
-                  modeFilter === tab.id
-                    ? "bg-violet-600 text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200/70 dark:bg-slate-800 dark:text-slate-300"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+              { id: "write", label: "写入" },
+              { id: "danger", label: "删除" },
+            ]}
+          />
         </div>
 
-        <div className="max-h-64 lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        <div className="max-h-64 lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto p-2.5 space-y-3">
           {connecting ? (
-            <p className="py-6 text-center text-xs text-slate-400">正在握手连接 /mcp 并拉取工具列表...</p>
+            <p className="py-6 text-center text-xs text-zinc-400">正在握手连接 /mcp 并拉取工具列表...</p>
           ) : !effectiveKey ? (
-            <div className="py-6 px-3 text-center space-y-2">
-              <p className="text-xs text-slate-400">尚未获取到 AGENTS_TOWER_API_KEY</p>
+            <div className="py-6 px-3 text-center space-y-2.5">
+              <p className="text-xs text-zinc-400">尚未获取到 AGENTS_TOWER_API_KEY</p>
               {onGoCreds && (
-                <button
-                  type="button"
-                  onClick={onGoCreds}
-                  className="rounded-full bg-violet-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-violet-700 cursor-pointer"
-                >
+                <button type="button" onClick={onGoCreds} className={UI.btnPrimary}>
                   前往凭据中心绑定账号
                 </button>
               )}
@@ -544,7 +533,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           ) : (
             groupedTools.map((group) => (
               <div key={group.name} className="space-y-1">
-                <div className="sticky top-0 bg-white/95 py-0.5 text-xs font-semibold text-slate-400 dark:bg-[#171522]/95">
+                <div className="sticky top-0 z-10 bg-white/95 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-[#111113]/95 dark:text-zinc-500">
                   {group.name}
                 </div>
                 {group.items.map((tool) => {
@@ -554,38 +543,34 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                   const isRead = Boolean(ann.readOnlyHint);
                   const unavail = unavailableTools[`${keyTag}::${tool.name}`];
                   const badgeCls = isDanger
-                    ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
+                    ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
                     : isRead
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                      : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300";
+                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300";
                   const badgeText = isDanger ? "删除" : isRead ? "只读" : "写入";
                   return (
                     <button
                       key={tool.name}
                       type="button"
                       onClick={() => selectTool(tool)}
-                      className={`w-full text-left rounded-xl border px-2.5 py-2 transition-colors cursor-pointer ${
+                      className={`w-full text-left rounded-md border px-2.5 py-2 transition-colors cursor-pointer ${
                         active
-                          ? "border-violet-500 bg-violet-50/70 dark:bg-violet-950/40"
-                          : "border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                          ? "border-zinc-900 bg-zinc-100/80 dark:border-zinc-200 dark:bg-zinc-800/70"
+                          : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
                       } ${unavail ? "opacity-65" : ""}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${badgeCls}`}>
+                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${badgeCls}`}>
                             {badgeText}
                           </span>
-                          <span className="truncate text-xs font-medium text-slate-800 dark:text-slate-200">
+                          <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
                             {ann.title || tool.name}
                           </span>
                         </div>
-                        {unavail && (
-                          <span className="shrink-0 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
-                            不可用
-                          </span>
-                        )}
+                        {unavail && <span className={UI.badgeDanger}>不可用</span>}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11px] text-slate-400 dark:text-slate-500">
+                      <div className="mt-1 truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
                         {tool.name}
                       </div>
                     </button>
@@ -595,34 +580,30 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
             ))
           )}
           {effectiveKey && !connecting && groupedTools.length === 0 && !connectError && (
-            <p className="py-4 text-center text-xs text-slate-400">没有匹配的 MCP 工具</p>
+            <p className="py-6 text-center text-xs text-zinc-400">没有匹配的 MCP 工具</p>
           )}
         </div>
       </aside>
 
-      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
-        <div className="rounded-2xl border border-slate-100/90 bg-white p-4 sm:p-5 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] space-y-3 dark:border-slate-800/80 dark:bg-[#171522]">
+      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto bg-[#FAFAFB] p-4 sm:p-6 space-y-4 dark:bg-[#09090B]">
+        <div className={`${UI.panel} p-4 space-y-3`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium ${
-                  serverMeta
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:border-emerald-800 dark:text-emerald-300"
-                    : "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/60 dark:border-amber-800 dark:text-amber-300"
-                }`}
-              >
+              <span className={serverMeta ? UI.badgeSuccess : UI.badgeWarning}>
                 <span className={`h-1.5 w-1.5 rounded-full ${serverMeta ? "bg-emerald-500" : "bg-amber-500"}`} />
                 {serverMeta
                   ? `${serverMeta.name} v${serverMeta.version} · MCP ${serverMeta.protocolVersion}`
                   : "MCP 未连接"}
               </span>
               {mcpKey && (
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                  当前绑定账号：{accountLabel}
+                <span className={UI.badgeNeutral}>
+                  绑定账号：{accountLabel}
                 </span>
               )}
               {pingLatency !== null && (
-                <span className="text-slate-400">ping: {pingLatency} ms</span>
+                <span className="font-mono text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
+                  ping: {pingLatency} ms
+                </span>
               )}
             </div>
 
@@ -631,7 +612,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 type="button"
                 disabled={!effectiveKey || connecting}
                 onClick={handlePing}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className={UI.btnSecondary}
               >
                 Ping 检测
               </button>
@@ -639,7 +620,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 type="button"
                 disabled={!effectiveKey || connecting}
                 onClick={connectAndLoadTools}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 disabled:opacity-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className={UI.btnSecondary}
               >
                 {connecting ? "握手中..." : "重新握手"}
               </button>
@@ -647,32 +628,29 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           </div>
 
           {!mcpKey && (
-            <div className="space-y-1 pt-1">
-              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            <div className="space-y-1.5 pt-1">
+              <label htmlFor="mcp-manual-key" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
                 临时 AGENTS_TOWER_API_KEY（测试未绑定密钥时使用）
               </label>
               <input
+                id="mcp-manual-key"
                 type="password"
                 value={manualKey}
                 onChange={(e) => setManualKey(e.target.value)}
                 placeholder="输入 at_sk-... 密钥自动握手加载工具"
-                className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-2 font-mono text-xs outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                className={`${UI.inputSm} font-mono`}
               />
             </div>
           )}
 
-          {connectError && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-              MCP 握手失败：{connectError}
-            </div>
-          )}
+          {connectError && <StatusBanner tone="error">MCP 握手失败：{connectError}</StatusBanner>}
 
           {serverMeta?.instructions && (
-            <details className="group text-xs text-slate-500 dark:text-slate-400">
-              <summary className="cursor-pointer select-none font-medium hover:text-slate-800 dark:hover:text-slate-200">
+            <details className="group text-xs text-zinc-500 dark:text-zinc-400">
+              <summary className="cursor-pointer select-none font-medium hover:text-zinc-900 dark:hover:text-zinc-200">
                 查看服务端下发给 Agent 的 MCP Instructions 说明
               </summary>
-              <p className="mt-1.5 rounded-xl border border-slate-100 bg-[#f8f8fc] p-3 leading-relaxed dark:border-slate-800 dark:bg-[#0e0d16]">
+              <p className={`mt-2 ${UI.subPanel} p-3 leading-relaxed text-zinc-700 dark:text-zinc-300`}>
                 {serverMeta.instructions}
               </p>
             </details>
@@ -680,68 +658,54 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
         </div>
 
         {activeTool && (
-          <div className="rounded-2xl border border-slate-100/90 bg-white p-4 sm:p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] space-y-4 dark:border-slate-800/80 dark:bg-[#171522]">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3.5 dark:border-slate-800">
+          <div className={`${UI.panel} p-4 sm:p-5 space-y-4`}>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-3.5 dark:border-zinc-800/80">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">
                     {activeTool.annotations?.title || activeTool.name}
                   </h3>
-                  <code className="rounded-md bg-violet-50 px-2 py-0.5 font-mono text-xs font-medium text-violet-700 dark:bg-violet-950/70 dark:text-violet-300">
+                  <code className={`${UI.badgeNeutral} font-mono`}>
                     {activeTool.name}
                   </code>
                   {currentUnavail && (
-                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:bg-red-950 dark:text-red-300">
+                    <span className={UI.badgeDanger}>
                       当前账号不可用 · {currentUnavail}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                   {activeTool.description}
                 </p>
               </div>
 
-              <div className="inline-flex rounded-full border border-slate-200 bg-slate-100/70 p-0.5 dark:border-slate-800 dark:bg-[#0e0d16]">
-                <button
-                  type="button"
-                  onClick={() => switchInputMode("form")}
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                    inputMode === "form"
-                      ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
-                  }`}
-                >
-                  Schema 表单
-                </button>
-                <button
-                  type="button"
-                  onClick={() => switchInputMode("json")}
-                  className={`rounded-full px-3 py-1 text-xs font-medium transition-all cursor-pointer ${
-                    inputMode === "json"
-                      ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400"
-                  }`}
-                >
-                  JSON 参数
-                </button>
-              </div>
+              <SegmentedTabs
+                size="sm"
+                value={inputMode}
+                onChange={switchInputMode}
+                options={[
+                  { id: "form", label: "Schema 表单" },
+                  { id: "json", label: "JSON 参数" },
+                ]}
+              />
             </div>
 
             {inputMode === "json" ? (
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                <label htmlFor="mcp-raw-args" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
                   tools/call arguments (JSON 对象)
                 </label>
                 <textarea
+                  id="mcp-raw-args"
                   rows={6}
                   value={rawArgsText}
                   onChange={(e) => setRawArgsText(e.target.value)}
                   placeholder="{}"
-                  className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] p-3 font-mono text-xs outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                  className={`${UI.inputSm} font-mono p-3`}
                 />
               </div>
             ) : schemaEntries.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-400 dark:border-slate-800">
+              <div className="rounded-md border border-dashed border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
                 该工具无需输入参数，直接点击下方「调用工具」即可执行。
               </div>
             ) : (
@@ -749,48 +713,64 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 {schemaEntries.map((field) => {
                   const val = formValues[field.name] ?? "";
                   const opts = paramOptions[field.name] || [];
-                  const isWide = field.type === "object" || field.type === "array" || field.name === "desc" || field.name === "content";
+                  const isWide =
+                    field.type === "object" ||
+                    field.type === "array" ||
+                    field.name === "desc" ||
+                    field.name === "content";
                   const canReloadOpt =
                     field.name === "team_id"
                       ? () => fetchToolOptions("team_id", "tower_list_teams")
                       : field.name === "todo_id" && String(formValues.todolist_id || "").trim()
-                        ? () => fetchToolOptions("todo_id", "tower_list_todos", { todolist_id: String(formValues.todolist_id).trim() })
+                        ? () =>
+                            fetchToolOptions("todo_id", "tower_list_todos", {
+                              todolist_id: String(formValues.todolist_id).trim(),
+                            })
                         : field.name === "topic_id" && String(formValues.project_id || "").trim()
-                          ? () => fetchToolOptions("topic_id", "tower_list_topics", { project_id: String(formValues.project_id).trim() })
+                          ? () =>
+                              fetchToolOptions("topic_id", "tower_list_topics", {
+                                project_id: String(formValues.project_id).trim(),
+                              })
                           : field.name === "upload_id" && String(formValues.project_id || "").trim()
-                            ? () => fetchToolOptions("upload_id", "tower_list_uploads", { project_id: String(formValues.project_id).trim() })
+                            ? () =>
+                                fetchToolOptions("upload_id", "tower_list_uploads", {
+                                  project_id: String(formValues.project_id).trim(),
+                                })
                             : null;
 
                   return (
                     <div key={field.name} className={`space-y-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                          <code className="font-mono text-violet-600 dark:text-violet-400">{field.name}</code>
+                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                          <code className="font-mono text-zinc-950 dark:text-zinc-100">{field.name}</code>
                           {field.required && <span className="ml-1 text-red-500">*</span>}
-                          <span className="ml-1.5 font-normal text-slate-400">({field.type})</span>
+                          <span className="ml-1.5 font-mono text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
+                            ({field.type})
+                          </span>
                         </label>
                         {canReloadOpt && (
                           <button
                             type="button"
                             disabled={fetchingOpt === field.name}
                             onClick={canReloadOpt}
-                            className="text-[11px] text-violet-600 hover:underline cursor-pointer dark:text-violet-400"
+                            className="text-[11px] font-medium text-zinc-600 underline-offset-2 hover:text-zinc-950 hover:underline disabled:opacity-50 cursor-pointer dark:text-zinc-400 dark:hover:text-zinc-100"
                           >
                             {fetchingOpt === field.name ? "加载中..." : "拉取选项"}
                           </button>
                         )}
                       </div>
                       {field.description && (
-                        <div className="text-[11px] text-slate-400">{field.description}</div>
+                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{field.description}</div>
                       )}
 
                       {opts.length > 0 && field.type === "string" && (
                         <select
+                          aria-label={`选择 ${field.name}`}
                           value={opts.some((o) => o.id === val) ? val : ""}
                           onChange={(e) =>
                             setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
                           }
-                          className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-1.5 text-xs outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                          className={UI.inputSm}
                         >
                           <option value="">下拉选择或下方手动输入（共 {opts.length} 项）</option>
                           {opts.map((o) => (
@@ -803,11 +783,12 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
                       {field.type === "boolean" ? (
                         <select
+                          aria-label={field.name}
                           value={String(val)}
                           onChange={(e) =>
                             setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
                           }
-                          className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-1.5 font-mono text-xs outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                          className={`${UI.inputSm} font-mono`}
                         >
                           <option value="">默认（不传）</option>
                           <option value="true">true</option>
@@ -821,7 +802,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                             setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
                           }
                           placeholder={field.type === "array" ? '["id1", "id2"]' : '{"key": "value"}'}
-                          className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] p-2.5 font-mono text-xs outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                          className={`${UI.inputSm} font-mono p-2.5`}
                         />
                       ) : (
                         <input
@@ -837,7 +818,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                                 ? "默认 20，最大 50"
                                 : `输入 ${field.name}`
                           }
-                          className="w-full rounded-xl border border-slate-200 bg-[#f8f8fc] px-3 py-1.5 font-mono text-xs outline-none focus:border-violet-500 focus:bg-white dark:border-slate-700 dark:bg-[#0e0d16] dark:text-slate-100"
+                          className={`${UI.inputSm} font-mono`}
                         />
                       )}
                     </div>
@@ -851,25 +832,21 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 type="button"
                 disabled={calling || !effectiveKey}
                 onClick={handleInvokeClick}
-                className={`rounded-full px-5 py-2 text-sm font-medium text-white disabled:opacity-60 cursor-pointer shadow-sm ${
-                  isActiveToolDangerous
-                    ? "bg-red-600 hover:bg-red-700 shadow-red-600/25"
-                    : "bg-violet-600 hover:bg-violet-700 shadow-violet-600/25"
-                }`}
+                className={isActiveToolDangerous ? UI.btnDanger : UI.btnPrimary}
               >
                 {calling ? "调用中..." : "调用工具 (tools/call)"}
               </button>
               <button
                 type="button"
                 onClick={() => copyText("rpc", JSON.stringify(previewPayload, null, 2))}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className={UI.btnSecondary}
               >
                 {copiedKey === "rpc" ? "已复制 JSON-RPC" : "复制 JSON-RPC"}
               </button>
               <button
                 type="button"
                 onClick={() => copyText("curl", mcpCurlCommand)}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className={UI.btnSecondary}
               >
                 {copiedKey === "curl" ? "已复制 curl" : "复制 /mcp curl"}
               </button>
@@ -880,63 +857,44 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
               )}
             </div>
 
-            {callError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
-                {callError}
-              </div>
-            )}
+            {callError && <StatusBanner tone="error">{callError}</StatusBanner>}
           </div>
         )}
 
         {callResult && (
-          <div className="rounded-2xl border border-slate-100/90 bg-white p-4 sm:p-6 shadow-[0_2px_12px_-4px_rgba(15,23,42,0.04)] space-y-3 dark:border-slate-800/80 dark:bg-[#171522]">
+          <div className={`${UI.panel} p-4 sm:p-5 space-y-3`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <span
-                  className={`rounded-full px-2.5 py-0.5 font-mono font-semibold ${
-                    callResult.isError
-                      ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"
-                      : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                  className={`font-mono font-semibold ${
+                    callResult.isError ? UI.badgeDanger : UI.badgeSuccess
                   }`}
                 >
                   {callResult.isError ? "isError: true" : "isError: false"}
                 </span>
-                <span className="text-slate-500 dark:text-slate-400">{callResult.durationMs} ms</span>
-                <div className="inline-flex rounded-full border border-slate-200 bg-slate-100/70 p-0.5 dark:border-slate-800 dark:bg-[#0e0d16]">
-                  <button
-                    type="button"
-                    onClick={() => setResultView("content")}
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium cursor-pointer ${
-                      resultView === "content"
-                        ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                        : "text-slate-500 dark:text-slate-400"
-                    }`}
-                  >
-                    工具返回内容
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setResultView("rpc")}
-                    className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium cursor-pointer ${
-                      resultView === "rpc"
-                        ? "bg-white text-slate-900 shadow-xs dark:bg-slate-800 dark:text-slate-100"
-                        : "text-slate-500 dark:text-slate-400"
-                    }`}
-                  >
-                    JSON-RPC 原始报文
-                  </button>
-                </div>
+                <span className="font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                  {callResult.durationMs} ms
+                </span>
+                <SegmentedTabs
+                  size="xs"
+                  value={resultView}
+                  onChange={setResultView}
+                  options={[
+                    { id: "content", label: "工具返回内容" },
+                    { id: "rpc", label: "JSON-RPC 原始报文" },
+                  ]}
+                />
               </div>
               <button
                 type="button"
                 onClick={() => copyText("out", formattedOutput.text)}
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:border-violet-300 hover:text-violet-600 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                className={UI.btnSecondary}
               >
                 {copiedKey === "out" ? "已复制" : "复制结果"}
               </button>
             </div>
 
-            <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-xl border border-slate-200/80 bg-[#f8f8fc] p-3.5 font-mono text-xs leading-relaxed text-slate-800 dark:border-slate-800 dark:bg-[#0e0d16] dark:text-slate-100">
+            <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50/80 p-3.5 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
               {formattedOutput.isJSON ? (
                 <HighlightedJSON text={formattedOutput.text} />
               ) : (
@@ -947,21 +905,14 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
         )}
       </section>
 
-      {confirmDanger && activeTool && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 dark:bg-black/60"
-          onClick={() => setConfirmDanger(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-xl space-y-4 dark:border-slate-700 dark:bg-slate-900"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              确认执行危险 MCP 工具调用
-            </h3>
-            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+      <ModalDialog
+        open={Boolean(confirmDanger && activeTool)}
+        onClose={() => setConfirmDanger(false)}
+        title="确认执行危险 MCP 工具调用"
+      >
+        {confirmDanger && activeTool && (
+          <>
+            <div className="space-y-2.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
               <p>
                 即将以账号「{accountLabel}」执行{" "}
                 <code className="font-mono font-semibold text-red-600 dark:text-red-400">
@@ -969,19 +920,15 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 </code>
                 （{activeTool.annotations?.title || "删除操作"}），调用参数：
               </p>
-              <pre className="max-h-40 overflow-y-auto break-all whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+              <pre className="max-h-40 overflow-y-auto break-all whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
                 {JSON.stringify(confirmDanger, null, 2)}
               </pre>
-              <p className="text-xs text-red-600 dark:text-red-400">
+              <p className="text-red-600 dark:text-red-400">
                 该工具会直接删除或变更真实 Tower 数据，请核对参数无误后再继续。
               </p>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setConfirmDanger(false)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              >
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setConfirmDanger(false)} className={UI.btnSecondary}>
                 取消
               </button>
               <button
@@ -991,14 +938,14 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                   setConfirmDanger(false);
                   executeToolCall(args);
                 }}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 cursor-pointer"
+                className={UI.btnDanger}
               >
                 确认调用
               </button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ModalDialog>
     </div>
   );
 }
