@@ -5,6 +5,7 @@ import {
   CopyIcon,
   CpuIcon,
   DesktopIcon,
+  DotsThreeIcon,
   ListBulletsIcon,
   KeyIcon,
   LockKeyIcon,
@@ -20,6 +21,7 @@ import ApiExplorer from "./ApiExplorer.jsx";
 import AuthScreen, { removeQuickLoginEntry, saveQuickLoginEntry } from "./AuthScreen.jsx";
 import McpExplorer from "./McpExplorer.jsx";
 import McpLogs from "./McpLogs.jsx";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -147,7 +149,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [confirmAction, setConfirmAction] = useState("");
+  const [confirmAction, setConfirmAction] = useState(null);
   const [showSecrets, setShowSecrets] = useState(false);
   const [requestedTab, setRequestedTab] = useState(readTabFromHash);
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_STORAGE_KEY) || "system");
@@ -166,6 +168,9 @@ export default function App() {
 
   const activeTab = ["admin", "explorer"].includes(requestedTab) && authUser?.role !== "admin" ? "creds" : requestedTab;
   const creds = store.items.find((item) => item.id === store.activeId) || store.items[0] || null;
+  const accountToUnlink = store.items.find((item) => item.id === confirmAction?.accountId);
+  const unlinkEmail = accountToUnlink?.user?.email || accountToUnlink?.token?.email;
+  const unlinkLabel = [accountToUnlink?.user?.nickname, unlinkEmail].filter(Boolean).join(" · ") || "Tower 成员";
 
   useEffect(() => {
     function syncTab() {
@@ -427,7 +432,7 @@ export default function App() {
   function handleSelectAccount(id) {
     setStatus("");
     setError("");
-    setConfirmAction("");
+    setConfirmAction(null);
     persistStore({ ...store, activeId: id });
   }
 
@@ -452,7 +457,7 @@ export default function App() {
     } finally {
       const remaining = store.items.filter(item => !removed.has(item.id));
       persistStore({ activeId: remaining.find(item => item.id === store.activeId)?.id || remaining[0]?.id || null, items: remaining });
-      setConfirmAction("");
+      setConfirmAction(null);
       setLoading(false);
     }
   }
@@ -487,7 +492,7 @@ export default function App() {
     if (!cred) return;
     setLoading(true);
     setError("");
-    setConfirmAction("");
+    setConfirmAction(null);
     try {
       const res = await fetch("/api/mcp-key/rotate", {
         method: "POST",
@@ -987,7 +992,6 @@ export default function App() {
                     将你的 Tower 账号接入 AI 助手。先添加 Tower 账号并完成授权，再复制「客户端配置」到支持 MCP 的 AI 客户端。也可以先到「MCP 调试」试用只读工具。
                   </p>
                 </div>
-                {creds && <Button type="button" size="sm" onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>}
               </header>
                     {error && <StatusBanner tone="error">{error}</StatusBanner>}
 
@@ -1033,22 +1037,49 @@ export default function App() {
               {status && <StatusBanner tone="success">{status}</StatusBanner>}
               {creds ? (
                 <div className="grid items-start gap-5 xl:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)]">
-                  <Card size="sm">
+                  <Card size="sm" className="min-w-0">
                     <CardHeader className="border-b"><CardTitle>已绑定账号</CardTitle></CardHeader>
                     <CardContent className="space-y-2">
-                      {store.items.map(item => (
-                        <button type="button" key={item.id} aria-pressed={item.id === creds.id}
-                          className="flex w-full items-center justify-between gap-2 rounded-md border p-3 text-left aria-pressed:border-primary aria-pressed:bg-muted/40"
-                          onClick={() => handleSelectAccount(item.id)}>
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{item.user?.nickname || item.user?.email || "Tower 成员"}</span>
-                            <span className="block truncate text-xs text-muted-foreground">{item.user?.email}</span>
-                          </span>
-                          {item.id === creds.id && <CheckIcon aria-label="当前账号" />}
-                        </button>
-                      ))}
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmAction("logout")}>解除当前账号绑定</Button>
-                      {store.items.length > 1 && <Button size="sm" variant="ghost" onClick={() => setConfirmAction("clear")}>解除全部绑定</Button>}
+                      {store.items.map((item) => {
+                        const isActive = item.id === creds.id;
+                        const email = item.user?.email || item.token?.email;
+                        const label = item.user?.nickname || email || "Tower 成员";
+                        return (
+                          <div key={item.id} data-active={isActive}
+                            className="flex items-center gap-1 rounded-md border pr-2 data-[active=true]:border-primary data-[active=true]:bg-muted/40">
+                            <button type="button" aria-pressed={isActive}
+                              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                              onClick={() => handleSelectAccount(item.id)}>
+                              <Avatar aria-hidden="true">
+                                <AvatarImage src={item.user?.gavatar || undefined} alt="" />
+                                <AvatarFallback>{label.slice(0, 1).toUpperCase()}</AvatarFallback>
+                              </Avatar>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-medium">{label}</span>
+                                {email && email !== label && <span className="block truncate text-xs text-muted-foreground">{email}</span>}
+                              </span>
+                              {isActive && <CheckIcon aria-hidden="true" className="size-4 shrink-0" />}
+                            </button>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                aria-label={`${label}的账号操作`}
+                                render={<Button type="button" size="icon" variant="ghost" disabled={loading} />}
+                              >
+                                <DotsThreeIcon weight="bold" aria-hidden="true" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem variant="destructive" onClick={() => setConfirmAction({ type: "unlink", accountId: item.id })}>
+                                  解除绑定
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        );
+                      })}
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>
+                        {store.items.length > 1 && <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "clear" })}>解除全部绑定</Button>}
+                      </div>
                     </CardContent>
                   </Card>
                   <Card size="sm" className="min-w-0">
@@ -1073,7 +1104,7 @@ export default function App() {
                           <CopyField label="AGENTS_TOWER_API_KEY" value={mcpKey} displayValue={maskIfHidden(mcpKey)} heightClass="h-12" />
                           <div className="flex gap-2">
                             <Button size="sm" variant="outline" onClick={() => setShowSecrets(v => !v)}>{showSecrets ? "隐藏密钥" : "显示密钥"}</Button>
-                            <Button size="sm" variant="outline" onClick={() => setConfirmAction("rotate_mcp")}>重置密钥</Button>
+                            <Button size="sm" variant="outline" onClick={() => setConfirmAction({ type: "rotate_mcp" })}>重置密钥</Button>
                           </div>
                         </details>
                       </> : <Button disabled={loading} onClick={handleSyncCurrent}>启用 MCP 接入</Button>}
@@ -1095,35 +1126,35 @@ export default function App() {
       <ConfirmDialog
         open={Boolean(confirmAction)}
         onOpenChange={(open) => {
-          if (!open) setConfirmAction("");
+          if (!open) setConfirmAction(null);
         }}
         title={
-          confirmAction === "rotate_mcp"
+          confirmAction?.type === "rotate_mcp"
               ? "确认重置 MCP 密钥"
-              : confirmAction === "logout"
-                ? "解除当前 Tower 账号绑定"
+              : confirmAction?.type === "unlink"
+                ? "解除 Tower 账号绑定"
                 : "解除全部 Tower 账号绑定"
         }
         description={
-          confirmAction === "rotate_mcp"
+          confirmAction?.type === "rotate_mcp"
               ? "重置后旧的 AGENTS_TOWER_API_KEY 将立即失效，所有已配置该密钥的 AI Agent 需更新新密钥后才能继续调用。"
-              : confirmAction === "logout"
-                ? `解除「${user?.nickname || user?.email || token?.email || "当前账号"}」的绑定？该账号关联的 MCP 密钥也将一并失效。`
+              : confirmAction?.type === "unlink"
+                ? `解除「${unlinkLabel}」的绑定？该账号关联的 MCP 密钥也将一并失效。`
                 : `解除所有（${store.items.length} 个）Tower 账号的绑定？该操作不可恢复。`
         }
         confirmLabel={
-          confirmAction === "rotate_mcp"
+          confirmAction?.type === "rotate_mcp"
               ? "确认重置"
-              : confirmAction === "logout"
+              : confirmAction?.type === "unlink"
                 ? "解除绑定"
                 : "解除全部绑定"
         }
         confirmVariant="destructive"
-        disabled={loading}
+        disabled={loading || (confirmAction?.type === "unlink" && !accountToUnlink)}
         onConfirm={() => {
-          if (confirmAction === "rotate_mcp") handleRotateMCPKey();
-          else if (confirmAction === "logout") unlinkAccounts([creds]);
-          else unlinkAccounts(store.items);
+          if (confirmAction?.type === "rotate_mcp") handleRotateMCPKey();
+          else if (confirmAction?.type === "clear") unlinkAccounts(store.items);
+          else if (accountToUnlink) unlinkAccounts([accountToUnlink]);
         }}
       />
 
