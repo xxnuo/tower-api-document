@@ -1072,10 +1072,10 @@ export default function App() {
                   </Card>
                 </div>
               ) : !otpCode && (
-                <Card className="items-center py-10 text-center">
+                <Card className="py-10 text-center">
                   <CardHeader><CardTitle>添加你的第一个 Tower 账号</CardTitle>
                     <CardDescription>使用微信扫码或邮箱密码登录，绑定后即可复制 MCP 配置。</CardDescription></CardHeader>
-                  <Button onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>
+                  <Button className="self-center" onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>
                 </Card>
               )}
             </div>
