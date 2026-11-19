@@ -81,7 +81,7 @@ func TestSearchRateLimiterConcurrency(t *testing.T) {
 }
 
 func TestDeclaredSearchArguments(t *testing.T) {
-	for _, def := range listMCPToolDefinitions() {
+	for _, def := range listMCPToolDefinitions(true) {
 		name := def["name"].(string)
 		if name != "search_todos" && name != "advanced_search_todos" {
 			continue

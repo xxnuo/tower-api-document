@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,11 +102,12 @@ func requireAdmin(cfg Config, next http.HandlerFunc) http.HandlerFunc {
 }
 
 type boundAccount struct {
-	AccountID    string    `json:"account_id"`
-	User         *UserInfo `json:"user"`
-	MCPAPIKey    string    `json:"mcp_api_key"`
-	MCPHash      string    `json:"mcp_hash"`
-	WebConnected bool      `json:"web_connected"`
+	AgentSignature bool      `json:"agent_signature"`
+	AccountID      string    `json:"account_id"`
+	User           *UserInfo `json:"user"`
+	MCPAPIKey      string    `json:"mcp_api_key"`
+	MCPHash        string    `json:"mcp_hash"`
+	WebConnected   bool      `json:"web_connected"`
 }
 
 func userLoginResults(cfg Config, userID int64) []boundAccount {
@@ -119,7 +121,7 @@ func userLoginResults(cfg Config, userID int64) []boundAccount {
 	out := make([]boundAccount, 0, len(stored))
 	for i := range stored {
 		acc := stored[i]
-		item := boundAccount{AccountID: acc.ID, User: acc.ToLoginResult().User, MCPAPIKey: acc.MCPAPIKey, MCPHash: acc.mcpHash()}
+		item := boundAccount{AgentSignature: acc.AgentSignature, AccountID: acc.ID, User: acc.ToLoginResult().User, MCPAPIKey: acc.MCPAPIKey, MCPHash: acc.mcpHash()}
 		if _, sessErr := cfg.Store.GetWebSession(stored[i].ID); sessErr == nil {
 			item.WebConnected = true
 		}
@@ -606,5 +608,28 @@ func runCLI(args []string, dbPath string, out io.Writer) error {
 	default:
 		printCLIUsage(out)
 		return fmt.Errorf("未知命令: %s", cmd)
+	}
+}
+
+func handleAgentSignature(cfg Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Enabled *bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || body.Enabled == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "请指定是否开启 Agent 评论署名"})
+			return
+		}
+		var enabled bool
+		err := cfg.Store.db.QueryRowContext(r.Context(), `UPDATE accounts SET agent_signature = ? WHERE id = ? AND user_id = ? RETURNING agent_signature`, *body.Enabled, r.PathValue("id"), userFromContext(r.Context()).ID).Scan(&enabled)
+		if errors.Is(err, sql.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "未找到绑定账号"})
+			return
+		}
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "保存署名设置失败"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"enabled": enabled})
 	}
 }

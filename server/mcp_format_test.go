@@ -16,7 +16,7 @@ func TestCompactTodoList(t *testing.T) {
 }
 
 func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
-	defs := listMCPToolDefinitions()
+	defs := listMCPToolDefinitions(true)
 	if len(defs) != len(resultProfiles) {
 		t.Fatalf("%d registered tools, %d profiles", len(defs), len(resultProfiles))
 	}

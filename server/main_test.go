@@ -761,6 +761,47 @@ func TestMCPAccountRoutes(t *testing.T) {
 			}
 		})
 	}
+	t.Run("account signature policy", func(t *testing.T) {
+		cookie, owner, _ := registerTestUser(t, mux, "owner", "password123")
+		if owner.ID != first.UserID {
+			t.Fatal("unexpected fixture owner")
+		}
+		set := func(account *StoredAccount, value string, status int) {
+			t.Helper()
+			req := httptest.NewRequest("PUT", "/api/accounts/"+account.ID+"/agent-signature", strings.NewReader(`{"enabled":`+value+`}`))
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != status {
+				t.Fatalf("settings: %d %s", rec.Code, rec.Body.String())
+			}
+		}
+		check := func(path string, enabled bool) {
+			t.Helper()
+			for _, body := range []string{
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+				`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`,
+			} {
+				req := httptest.NewRequest("POST", path, strings.NewReader(body))
+				req.Header.Set("AGENTS_TOWER_API_KEY", first.MCPAPIKey)
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"result"`) || strings.Contains(rec.Body.String(), "PI_MODEL") != enabled {
+					t.Fatalf("unexpected signature policy for %s, enabled=%v, request=%s", path, enabled, body)
+				}
+			}
+		}
+		path := "/" + second.mcpHash() + "/mcp"
+		check(path, true)
+		set(second, "false", 200)
+		set(foreign, "false", 404)
+		set(second, "null", 400)
+		bind(second.UserID, second.TowerID, "second-refreshed")
+		check(path, false)
+		check("/mcp", true)
+		set(second, "true", 200)
+		check(path, true)
+	})
 	guide := httptest.NewRecorder()
 	mux.ServeHTTP(guide, httptest.NewRequest(http.MethodGet, "/api/skill.md?account="+second.mcpHash(), nil))
 	if guide.Code != http.StatusOK || !strings.Contains(guide.Body.String(), "/"+second.mcpHash()+"/mcp") ||
@@ -1232,7 +1273,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 	adminCookie, _, _ := registerTestUser(t, mux, "admin1", "pass123")
 
 	// 3. Default MCP hard-delete protection blocks delete_todo, but allows complete_todo and reopen_todo (non-destructive)
-	for _, def := range listMCPToolDefinitions() {
+	for _, def := range listMCPToolDefinitions(true) {
 		if def["name"] == "complete_todo" || def["name"] == "reopen_todo" || def["name"] == "unassign_todo" {
 			ann, _ := def["annotations"].(map[string]any)
 			if ann["destructiveHint"] == true {

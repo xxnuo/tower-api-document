@@ -89,12 +89,14 @@ type UserInfo struct {
 }
 
 type LoginResult struct {
-	AccountID    string        `json:"account_id,omitempty"`
-	User         *UserInfo     `json:"user,omitempty"`
-	Token        TokenResponse `json:"token"`
-	MCPAPIKey    string        `json:"mcp_api_key,omitempty"`
-	WebConnected bool          `json:"web_connected,omitempty"`
-	WebEmail     string        `json:"web_email,omitempty"`
+	AgentSignature bool          `json:"agent_signature"`
+	MCPHash        string        `json:"mcp_hash,omitempty"`
+	AccountID      string        `json:"account_id,omitempty"`
+	User           *UserInfo     `json:"user,omitempty"`
+	Token          TokenResponse `json:"token"`
+	MCPAPIKey      string        `json:"mcp_api_key,omitempty"`
+	WebConnected   bool          `json:"web_connected,omitempty"`
+	WebEmail       string        `json:"web_email,omitempty"`
 }
 
 func loadDotEnv(path string) {
@@ -295,6 +297,7 @@ func newMux(cfg Config) http.Handler {
 		u := userFromContext(req.Context())
 		writeJSON(writer, http.StatusOK, map[string]any{"accounts": userLoginResults(cfg, u.ID)})
 	}))
+	mux.HandleFunc("PUT /api/accounts/{id}/agent-signature", requireAuth(cfg, handleAgentSignature(cfg)))
 	mux.HandleFunc("POST /api/accounts/sync", requireAuth(cfg, handleSyncAccount(cfg)))
 	mux.HandleFunc("POST /api/accounts/web/continue", requireAuth(cfg, handleGrantContinue(cfg)))
 	mux.HandleFunc("POST /api/accounts/web/email", requireAuth(cfg, handleWebEmailLogin(cfg)))

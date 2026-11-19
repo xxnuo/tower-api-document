@@ -24,6 +24,7 @@ import AuthScreen, { removeQuickLoginEntry, saveQuickLoginEntry } from "./AuthSc
 import McpExplorer from "./McpExplorer.jsx";
 import McpLogs from "./McpLogs.jsx";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -517,6 +518,28 @@ ${mcpConfigSnippet}
     } catch (err) {
       setStatus("");
       setError(`同步失败: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function setAgentSignature(enabled) {
+    const id = creds.id;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/accounts/${encodeURIComponent(id)}/agent-signature`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setStore(prev => ({ ...prev, items: prev.items.map(item =>
+        item.id === id ? { ...item, agent_signature: data.enabled } : item
+      ) }));
+    } catch (err) {
+      setError(`保存署名设置失败：${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -1158,6 +1181,13 @@ ${mcpConfigSnippet}
                         <div className="flex flex-wrap gap-2">
                           <Button size="sm" onClick={() => navigateToTab("mcp")}>测试 MCP 连接</Button>
                           <Button size="sm" variant="outline" onClick={handleCopyAgentGuide}>{skillCopied ? "已复制" : "复制 Agent 指南"}</Button>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 border-t pt-3">
+                          <div className="space-y-1">
+                            <Label id="agent-signature-label" htmlFor="agent-signature">Agent 评论时署名</Label>
+                            <p id="agent-signature-hint" className="text-xs text-muted-foreground">向 Agent 提供评论和讨论的署名规则。已连接的客户端需重新握手以刷新规则。</p>
+                          </div>
+                          <Switch id="agent-signature" aria-labelledby="agent-signature-label" aria-describedby="agent-signature-hint" checked={creds.agent_signature ?? true} disabled={loading} onCheckedChange={setAgentSignature} />
                         </div>
                         <details className="space-y-3 border-t pt-3">
                           <summary className="cursor-pointer text-xs font-medium">管理 MCP 密钥</summary>

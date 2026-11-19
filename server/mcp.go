@@ -375,7 +375,7 @@ var towerMCPTools = []mcpToolSpec{
 		Method: http.MethodPost, PathTemplate: "/api/v1/todos/{todo_id}/comments", BodyEnvelope: "comment",
 		Params: []mcpParam{
 			pPath("todo_id", "任务 ID"),
-			pBody("content", "string", true, "评论内容（支持富文本/HTML 或纯文本）。Agent 代发时，"+agentSignatureHint),
+			pBody("content", "string", true, "评论内容（支持富文本/HTML 或纯文本）"),
 		},
 	},
 	{
@@ -447,7 +447,7 @@ var towerMCPTools = []mcpToolSpec{
 		Params: []mcpParam{
 			pPath("project_id", "项目 ID"),
 			pBody("subject", "string", true, "讨论标题"),
-			pBody("content", "string", true, "讨论正文内容。Agent 代发时，"+agentSignatureHint),
+			pBody("content", "string", true, "讨论正文内容"),
 		},
 	},
 	{
@@ -583,11 +583,14 @@ var towerMCPTools = []mcpToolSpec{
 	},
 }
 
-func buildToolSchema(spec mcpToolSpec) map[string]any {
+func buildToolSchema(spec mcpToolSpec, signature bool) map[string]any {
 	props := map[string]any{}
 	required := []string{}
 	for _, param := range spec.Params {
 		prop := map[string]any{"description": param.Desc}
+		if signature && param.Name == "content" && (spec.Name == "create_todo_comment" || spec.Name == "create_topic") {
+			prop["description"] = param.Desc + "。Agent 代发时，" + agentSignatureHint
+		}
 		switch param.Type {
 		case "integer":
 			prop["type"] = "integer"
@@ -644,7 +647,7 @@ func isSafeTodoStateDelete(apiPath string) bool {
 	return isTodo && id != "" && id != "." && id != ".." && !strings.Contains(action, "/") && (action == "completion" || action == "assignment")
 }
 
-func listMCPToolDefinitions() []map[string]any {
+func listMCPToolDefinitions(signature bool) []map[string]any {
 	out := make([]map[string]any, 0, totalMCPToolCount())
 	for _, spec := range slices.Concat(towerMCPTools, gatewayTaskTools) {
 		isReadOnly := spec.Method == http.MethodGet || spec.Name == "filter_project_todos"
@@ -652,7 +655,7 @@ func listMCPToolDefinitions() []map[string]any {
 		out = append(out, map[string]any{
 			"name":        spec.Name,
 			"description": spec.Desc,
-			"inputSchema": buildToolSchema(spec),
+			"inputSchema": buildToolSchema(spec, signature),
 			"annotations": map[string]any{
 				"title":           spec.Title,
 				"readOnlyHint":    isReadOnly,
@@ -871,10 +874,14 @@ func setMCPHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 }
 
-func handleMCP(cfg Config) http.HandlerFunc {
+func newAccountMCPServer(cfg Config, signature bool) *mcp.Server {
 	toolIndex := make(map[string]mcpToolSpec, len(towerMCPTools))
 	for _, spec := range towerMCPTools {
 		toolIndex[spec.Name] = spec
+	}
+	signatureSection := ""
+	if signature {
+		signatureSection = "代发署名\n- 发表任务评论、发起讨论或回复讨论时，" + agentSignatureHint + "\n\n"
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: appVersion}, &mcp.ServerOptions{
 		Instructions: `任务查询
@@ -886,10 +893,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 - 搜索文档用 search_todos(team_id, keyword, category=18)，再把命中的 team_id 和 url 传给 read_repository_item。
 - 浏览目录用 list_repositories 和 list_repository_items。
 
-代发署名
-- 发表任务评论、发起讨论或回复讨论时，` + agentSignatureHint + `
-
-资源操作
+` + signatureSection + `资源操作
 - 缺少 ID 时，用 list_teams 获取团队，再用 list_projects 或 list_team_members 获取项目或成员。项目内的任务清单用 list_todolists。
 - 上传项目文件用 upload_file。任务操作遵循 Tower 权限，服务端默认开启硬删除保护。
 
@@ -897,7 +901,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 - 标准列表默认每页 20 条，最多 50 条。按 meta.next_page 翻页。list_events 用 meta.next_cursor 作为下一次的 last_item_id。
 - meta.returned 是本次返回数，meta.total 仅在总数可确认时提供。`,
 	})
-	for _, def := range listMCPToolDefinitions() {
+	for _, def := range listMCPToolDefinitions(signature) {
 		data, err := json.Marshal(def)
 		if err != nil {
 			panic(err)
@@ -955,7 +959,17 @@ func handleMCP(cfg Config) http.HandlerFunc {
 			return result, err
 		}
 	})
-	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+	return server
+}
+
+func handleMCP(cfg Config) http.HandlerFunc {
+	signed, unsigned := newAccountMCPServer(cfg, true), newAccountMCPServer(cfg, false)
+	transport := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		if r.Context().Value(mcpAccountKey{}).(*StoredAccount).AgentSignature {
+			return signed
+		}
+		return unsigned
+	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 		hash := req.PathValue("hash")

@@ -54,6 +54,7 @@ type UserSummary struct {
 }
 
 type StoredAccount struct {
+	AgentSignature bool
 	ID             string
 	UserID         int64
 	TowerID        string
@@ -95,7 +96,9 @@ func (acc *StoredAccount) ToLoginResult() LoginResult {
 			CreatedAt:    acc.TokenCreatedAt,
 			Email:        acc.Email,
 		},
-		MCPAPIKey: acc.MCPAPIKey,
+		MCPAPIKey:      acc.MCPAPIKey,
+		AgentSignature: acc.AgentSignature,
+		MCPHash:        acc.mcpHash(),
 	}
 }
 
@@ -178,6 +181,7 @@ func OpenStore(dbPath string) (*Store, error) {
 		expires_in INTEGER NOT NULL DEFAULT 0,
 		token_created_at INTEGER NOT NULL DEFAULT 0,
 		mcp_api_key TEXT NOT NULL UNIQUE,
+        agent_signature INTEGER NOT NULL DEFAULT 1,
 		created_at INTEGER NOT NULL,
 		updated_at INTEGER NOT NULL
 	);
@@ -254,7 +258,7 @@ func migrateAccountsSchema(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	hasUserID, hasTowerID := false, false
+	hasUserID, hasTowerID, hasSignature := false, false, false
 	for rows.Next() {
 		var cid, notnull, pk int
 		var name, ctype string
@@ -262,6 +266,9 @@ func migrateAccountsSchema(db *sql.DB) error {
 		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
 			rows.Close()
 			return err
+		}
+		if name == "agent_signature" {
+			hasSignature = true
 		}
 		if name == "user_id" {
 			hasUserID = true
@@ -272,6 +279,11 @@ func migrateAccountsSchema(db *sql.DB) error {
 	}
 	rows.Close()
 
+	if !hasSignature {
+		if _, err := db.Exec(`ALTER TABLE accounts ADD COLUMN agent_signature INTEGER NOT NULL DEFAULT 1`); err != nil {
+			return err
+		}
+	}
 	if !hasUserID {
 		if _, err := db.Exec(`ALTER TABLE accounts ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
@@ -738,6 +750,7 @@ func scanAccount(row interface{ Scan(dest ...any) error }) (*StoredAccount, erro
 		&acc.MCPAPIKey,
 		&acc.CreatedAt,
 		&acc.UpdatedAt,
+		&acc.AgentSignature,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAccountNotFound
@@ -751,7 +764,7 @@ func scanAccount(row interface{ Scan(dest ...any) error }) (*StoredAccount, erro
 	return &acc, nil
 }
 
-const selectAccountCols = `id, user_id, tower_id, nickname, email, avatar, access_token, refresh_token, token_type, expires_in, token_created_at, mcp_api_key, created_at, updated_at`
+const selectAccountCols = `id, user_id, tower_id, nickname, email, avatar, access_token, refresh_token, token_type, expires_in, token_created_at, mcp_api_key, created_at, updated_at, agent_signature`
 
 func (s *Store) ListAccountsByUser(userID int64) ([]StoredAccount, error) {
 	rows, err := s.db.Query(`SELECT `+selectAccountCols+` FROM accounts WHERE user_id = ? ORDER BY updated_at DESC`, userID)
