@@ -24,7 +24,7 @@ import McpExplorer from "./McpExplorer.jsx";
 import McpLogs from "./McpLogs.jsx";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -368,19 +368,22 @@ export default function App() {
     }
   }
 
-  async function handleCopySkillMD() {
+  async function handleCopyAgentGuide() {
     try {
-      const res = await fetch(skillURL);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      let text = await res.text();
-      if (mcpKey) {
-        text = text.replace("<在 AgentsTower 账号与接入获取的 at_sk-... 密钥>", mcpKey);
-      }
+      const text = `请帮我在你当前运行的客户端中安装并启用下面的 AgentsTower MCP 服务。
+
+1. 使用当前客户端支持的 MCP 安装命令或配置方式，将此服务添加到我的用户级配置。保留已有服务和其他设置。如果客户端的配置格式不同，请转换格式并保留服务名、Streamable HTTP 地址和鉴权请求头。
+2. 安装后检查连接，尝试列出工具，并告诉我结果。如果需要重启客户端或由我完成某一步，请说明具体操作。
+3. 配置中的密钥仅用于连接此服务，请勿在回复中回显。
+
+\`\`\`json
+${mcpConfigSnippet}
+\`\`\``;
       if (!(await copy(text))) return;
       setSkillCopied(true);
       setTimeout(() => setSkillCopied(false), 1800);
     } catch (err) {
-      setError(`复制 SKILL.md 失败: ${err.message}`);
+      setError(`复制 Agent 指南失败: ${err.message}`);
     }
   }
 
@@ -662,7 +665,6 @@ export default function App() {
   const mcpURL = new URL(config.mcp_url || "/mcp", window.location.origin);
   if (mcpHash) mcpURL.pathname = mcpURL.pathname.replace(/\/mcp$/, `/${mcpHash}/mcp`);
   const mcpServerURL = mcpURL.href;
-  const skillURL = mcpHash ? `/api/skill.md?account=${mcpHash}` : "/api/skill.md";
   const mcpConfigSnippet = JSON.stringify(
     {
       mcpServers: {
@@ -1116,8 +1118,7 @@ export default function App() {
                         <CopyField label="客户端配置" value={mcpConfigSnippet} displayValue={maskIfHidden(mcpConfigSnippet)} heightClass="min-h-44" />
                         <div className="flex flex-wrap gap-2">
                           <Button size="sm" onClick={() => navigateToTab("mcp")}>测试 MCP 连接</Button>
-                          <Button size="sm" variant="outline" onClick={handleCopySkillMD}>{skillCopied ? "已复制" : "复制 Agent 指南"}</Button>
-                          <a href={`${skillURL}${mcpHash ? "&" : "?"}download=1`} download="SKILL.md" className={buttonVariants({variant:"outline",size:"sm"})}>下载指南</a>
+                          <Button size="sm" variant="outline" onClick={handleCopyAgentGuide}>{skillCopied ? "已复制" : "复制 Agent 指南"}</Button>
                         </div>
                         <details className="space-y-3 border-t pt-3">
                           <summary className="cursor-pointer text-xs font-medium">管理 MCP 密钥</summary>
