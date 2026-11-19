@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { version } from "../package.json";
 import {
   CaretUpDownIcon,
   CheckIcon,
@@ -736,7 +737,7 @@ export default function App() {
             </div>
           </a>
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono text-muted-foreground">
-            v0.1
+            v{version}
           </Badge>
         </div>
 

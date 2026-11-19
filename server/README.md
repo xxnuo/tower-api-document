@@ -45,7 +45,7 @@ go run . user reset-password <username> <new-password>
 
 - 部署主机为 `xxnuo@kompiler.lan`，由当前用户通过 Podman Compose 管理。
 - 服务入口为 [http://kompiler.lan:18888](http://kompiler.lan:18888)，MCP 路径为 `/mcp`。宿主机端口 `18888` 映射到容器端口 `8888`。
-- 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.2`。
+- 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.3`。
 - 远端 `.env` 从本机 `server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/data.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
 
 ```bash
