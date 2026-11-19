@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools, gatewayLibraryTools, gatewayScheduleTools)
+var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools, gatewayLibraryTools, gatewayScheduleTools, gatewayRelationTools)
 
 var projectTaskTools = []mcpToolSpec{
 	{
@@ -110,6 +110,8 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		return nil, err
 	}
 	switch spec.Name {
+	case "list_todo_dependencies", "add_todo_dependency", "remove_todo_dependency", "copy_todo":
+		return client.runTodoRelation(ctx, cfg, acc, spec.Name, pagePath, todoID, args)
 	case "get_todo_schedule", "set_todo_estimated_time", "set_todo_milestone", "set_todo_recurrence":
 		return client.todoSchedule(ctx, pagePath, todoID, spec.Name, args)
 	case "edit_my_todo_comment":

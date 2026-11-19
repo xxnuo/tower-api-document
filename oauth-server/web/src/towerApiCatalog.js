@@ -91,6 +91,10 @@ export const TOWER_API_CATALOG = [
 
   { id: "project-task-fields", group: "项目", name: "查询可用标签、自定义字段及选项", tags: ["Web"], method: "GET", path: "/api/v1/projects/{project_id}/task_fields" },
   { id: "project-filter-todos", group: "任务", name: "按项目字段组合筛选任务", tags: ["API", "Multi-API"], method: "POST", path: "/api/v1/projects/{project_id}/filter_todos", defaultBody: '{\n  "conditions": [{"field": "title", "operator": "in", "value": "测试"}],\n  "status": "uncompleted"\n}' },
+  { id: "todo-dependencies", group: "任务", name: "查询前置和后置依赖", tags: ["Web"], method: "GET", path: "/api/v1/todos/{todo_id}/dependencies" },
+  { id: "todo-add-dependency", group: "任务", name: "添加任务依赖", tags: ["Web"], method: "POST", path: "/api/v1/todos/{todo_id}/add_dependency", defaultBody: JSON.stringify({ dependency_todo_id: "", direction: "parent" }, null, 2) },
+  { id: "todo-remove-dependency", group: "任务", name: "解除任务依赖", tags: ["Web"], method: "POST", path: "/api/v1/todos/{todo_id}/remove_dependency", defaultBody: JSON.stringify({ dependency_todo_id: "", direction: "parent" }, null, 2) },
+  { id: "copy-todo", group: "任务", name: "原生复制一份任务", tags: ["Web"], method: "POST", path: "/api/v1/todos/{todo_id}/copy", defaultBody: JSON.stringify({ project_id: "", copy_assignee: true, copy_due_at: false, copy_desc: true, copy_sub_todos: false, copy_attachments: false, copy_labels: false, copy_cc_members: false, copy_todos_dependencies: false }, null, 2) },
   { id: "todo-schedule", group: "任务", name: "读取任务排期设置", tags: ["Web"], method: "GET", path: "/api/v1/todos/{todo_id}/schedule" },
   { id: "todo-estimate", group: "工时", name: "设置预估工时（分钟，0 清空）", tags: ["Web"], method: "PUT", path: "/api/v1/todos/{todo_id}/estimated_time", defaultBody: JSON.stringify({ estimated_minutes: 60 }, null, 2) },
   { id: "todo-milestone", group: "任务", name: "设置或取消里程碑", tags: ["Web"], method: "PUT", path: "/api/v1/todos/{todo_id}/milestone", defaultBody: JSON.stringify({ enabled: true }, null, 2) },
