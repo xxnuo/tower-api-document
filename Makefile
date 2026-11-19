@@ -19,8 +19,18 @@ build: build-web
 run: build-web
 	cd server && go run .
 
+# Run Air and Vite directly so each can handle shutdown for its children.
 dev: build-web
-	@bash -c 'trap "kill 0" EXIT INT TERM; (cd server && VITE_DEV_URL=http://localhost:5173 "$(AIR)") & (cd server/web && pnpm dev) & wait'
+	@bash -c '\
+		cleanup() { \
+			trap "" INT TERM; \
+			kill -TERM -- $$air_pid $$vite_pid 2>/dev/null || :; \
+			wait; \
+		}; \
+		trap cleanup EXIT; trap "exit 0" INT TERM; \
+		(cd server && VITE_DEV_URL=http://localhost:5173 exec "$(AIR)") & air_pid=$$!; \
+		(cd server/web && exec ./node_modules/.bin/vite) <&0 & vite_pid=$$!; \
+		wait'
 
 test: build-web
 	cd server && go test -v ./... && go vet ./...
