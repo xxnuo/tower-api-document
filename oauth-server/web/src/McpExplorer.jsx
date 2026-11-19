@@ -17,10 +17,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
 
-function ToolSourceBadge({ tool }) {
+function ToolBadges({ tool }) {
   const source = tool._meta?.["agents-tower/source"];
-  if (!source) return null;
-  return <Badge variant="secondary" className="shrink-0 font-mono text-[10px]">{source}</Badge>;
+  const tags = tool._meta?.["agents-tower/tags"] ?? [];
+  return [source, ...tags].filter(Boolean).map(tag => (
+    <Badge key={tag} variant="secondary" className="shrink-0 font-mono text-[10px]">{tag}</Badge>
+  ));
 }
 
 function resolveToolGroup(name) {
@@ -611,7 +613,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                         )}
                       </div>
                       <div className="mt-1 flex items-center gap-1.5">
-                        <ToolSourceBadge tool={tool} />
+                        <ToolBadges tool={tool} />
                         <span className="truncate font-mono text-[11px] text-muted-foreground">{tool.name}</span>
                       </div>
                     </button>
@@ -691,7 +693,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
             <CardHeader className="border-b">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle className="text-sm">{activeTool.annotations?.title || activeTool.name}</CardTitle>
-                <ToolSourceBadge tool={activeTool} />
+                <ToolBadges tool={activeTool} />
                 <Badge variant="secondary" className="font-mono">
                   {activeTool.name}
                 </Badge>

@@ -778,7 +778,11 @@ func listMCPToolDefinitions() []map[string]any {
 		case "search_todos", "add_todo_project", "remove_todo_project":
 			source = "Web"
 		}
-		tool["_meta"] = map[string]any{"agents-tower/source": source}
+		meta := map[string]any{"agents-tower/source": source}
+		if tool["name"] == "advanced_search_todos" {
+			meta["agents-tower/tags"] = []string{"Multi-API"}
+		}
+		tool["_meta"] = meta
 	}
 	return out
 }
