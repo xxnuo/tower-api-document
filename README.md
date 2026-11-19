@@ -26,7 +26,7 @@ make run
 - `make install`：安装 `server/web` 前端依赖（`pnpm install`）
 - `make dev`：同时启动 Go 热重载（`air`）与 Vite 前端开发服务
 - `make build-web`：构建前端静态资源到 `server/web/dist`
-- `make build`：构建发布用单文件二进制 `server/bin/tower-oauth`（静态编译并裁剪符号，存在 `upx` 时自动压缩）
+- `make build`：构建发布用单文件二进制 `server/bin/agentstower`（静态编译并裁剪符号，存在 `upx` 时自动压缩）
 - `make test`：构建前端并运行 `go test -v ./...` 与 `go vet ./...`
 
 ## 环境变量

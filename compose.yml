@@ -1,7 +1,7 @@
 services:
-  agents-tower:
+  agentstower:
     image: registry.lazycat.cloud/x/agentstower:${AGENTSTOWER_TAG:-latest}
-    container_name: agents-tower
+    container_name: agentstower
     restart: unless-stopped
     ports:
       - "8888:8888"

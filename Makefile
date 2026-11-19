@@ -13,8 +13,8 @@ build-web:
 	cd server/web && pnpm build
 
 build: build-web
-	cd server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/agents-tower .
-	@if command -v upx >/dev/null 2>&1; then upx --best --lzma -q server/bin/agents-tower; fi
+	cd server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/agentstower .
+	@if command -v upx >/dev/null 2>&1; then upx --best --lzma -q server/bin/agentstower; fi
 
 run: build-web
 	cd server && go run .

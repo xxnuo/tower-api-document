@@ -7,10 +7,10 @@ import { renderLlmsTxt } from "@geosuite/llms-txt-generator";
 
 function siteIndexes() {
   return {
-    name: "agents-tower-site-indexes",
+    name: "agentstower-site-indexes",
     async generateBundle() {
       // Go substitutes the deployment's public website URL at request time.
-      const site = "https://agents-tower.invalid";
+      const site = "https://agentstower.invalid";
       const sitemap = new SitemapStream();
       const xml = streamToPromise(sitemap);
       sitemap.end({ url: site + "/" });

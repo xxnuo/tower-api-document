@@ -1,5 +1,5 @@
 ---
-name: agents-tower
+name: agentstower
 description: Use Tower.im team collaboration platform via AgentsTower Streamable HTTP MCP Server — query teams, projects, members, todolists, todos, topics, uploads, time logs, and notifications, or create/assign/complete tasks and upload project files.
 ---
 

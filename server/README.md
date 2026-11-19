@@ -31,7 +31,7 @@
 cd server
 # 查看所有用户及角色
 go run . user list
-# 授权指定用户为管理员（或使用编译后的 ./bin/agents-tower）
+# 授权指定用户为管理员（或使用编译后的 ./bin/agentstower）
 go run . admin grant <username>
 # 取消管理员权限
 go run . admin revoke <username>
@@ -65,8 +65,8 @@ curl -fsS http://kompiler.lan:18888/api/healthz
 docker compose up -d
 
 # 方式二：单独构建运行
-cd server && docker build -t agents-tower .
-docker run -d --name agents-tower -p 8888:8888 -v "$(pwd)/data:/app/data" --env-file .env agents-tower
+cd server && docker build -t agentstower .
+docker run -d --name agentstower -p 8888:8888 -v "$(pwd)/data:/app/data" --env-file .env agentstower
 ```
 
 ## Agent MCP 接入配置示例

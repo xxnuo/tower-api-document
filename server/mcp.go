@@ -833,9 +833,9 @@ func listMCPToolDefinitions() []map[string]any {
 		if _, ok := gatewayTaskSpec(tool["name"].(string)); ok && tool["name"] != "filter_project_todos" {
 			source = "Web"
 		}
-		meta := map[string]any{"agents-tower/source": source}
+		meta := map[string]any{"agentstower/source": source}
 		if tool["name"] == "advanced_search_todos" || tool["name"] == "list_project_todos" || tool["name"] == "filter_project_todos" {
-			meta["agents-tower/tags"] = []string{"Multi-API"}
+			meta["agentstower/tags"] = []string{"Multi-API"}
 		}
 		tool["_meta"] = meta
 	}
@@ -843,7 +843,7 @@ func listMCPToolDefinitions() []map[string]any {
 }
 
 func extractMCPKey(req *http.Request) string {
-	for _, header := range []string{"AGENTS_TOWER_API_KEY", "X-API-Key", "X-Agents-Tower-Key"} {
+	for _, header := range []string{"AGENTS_TOWER_API_KEY", "X-API-Key", "X-AgentsTower-Key", "X-Agents-Tower-Key"} {
 		if val := strings.TrimSpace(req.Header.Get(header)); val != "" {
 			return val
 		}
@@ -860,7 +860,7 @@ type mcpAccountKey struct{}
 func setMCPHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("Access-Control-Allow-Origin", "*")
 	writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, AGENTS_TOWER_API_KEY, X-API-Key, X-Agents-Tower-Key, Mcp-Session-Id, Mcp-Protocol-Version, Mcp-Method, Mcp-Name")
+	writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, AGENTS_TOWER_API_KEY, X-API-Key, X-AgentsTower-Key, X-Agents-Tower-Key, Mcp-Session-Id, Mcp-Protocol-Version, Mcp-Method, Mcp-Name")
 	writer.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 }
 

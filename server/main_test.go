@@ -808,12 +808,19 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	}
 
 	// 4. tools/list
-	listReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
-	listReq.Header.Set("Authorization", "Bearer "+acc.MCPAPIKey)
-	listRec := httptest.NewRecorder()
-	mux.ServeHTTP(listRec, listReq)
-	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"create_todo"`) {
-		t.Fatalf("tools/list failed: %d %s", listRec.Code, listRec.Body.String())
+	for header, value := range map[string]string{
+		"Authorization":      "Bearer " + acc.MCPAPIKey,
+		"X-AgentsTower-Key":  acc.MCPAPIKey,
+		"X-Agents-Tower-Key": acc.MCPAPIKey,
+	} {
+		listReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+		listReq.Header.Set(header, value)
+		listRec := httptest.NewRecorder()
+		mux.ServeHTTP(listRec, listReq)
+		if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"create_todo"`) ||
+			!strings.Contains(listRec.Body.String(), `"agentstower/source"`) {
+			t.Fatalf("tools/list with %s failed: %d %s", header, listRec.Code, listRec.Body.String())
+		}
 	}
 
 	// 5. tools/call GET with query parameter wire mapping (page -> page[number])

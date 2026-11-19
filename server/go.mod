@@ -1,4 +1,4 @@
-module agents-tower
+module agentstower
 
 go 1.26.0
 

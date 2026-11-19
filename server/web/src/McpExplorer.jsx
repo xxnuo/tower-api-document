@@ -20,7 +20,7 @@ import { useClipboard } from "@/components/clipboard";
 
 const STATELESS_PROTOCOL = "2026-07-28";
 const LEGACY_PROTOCOL = "2025-11-25";
-const CLIENT_INFO = { name: "AgentsTower-WebInspector", version: "1.0.0" };
+const CLIENT_INFO = { name: "AgentsTower Web Inspector", version: "1.0.0" };
 
 function buildRPCRequest(id, method, params, { protocolVersion, sessionId } = {}) {
   const headers = {
@@ -46,8 +46,8 @@ function buildRPCRequest(id, method, params, { protocolVersion, sessionId } = {}
 }
 
 function ToolBadges({ tool }) {
-  const source = tool._meta?.["agents-tower/source"];
-  const tags = tool._meta?.["agents-tower/tags"] ?? [];
+  const source = tool._meta?.["agentstower/source"] ?? tool._meta?.["agents-tower/source"];
+  const tags = tool._meta?.["agentstower/tags"] ?? tool._meta?.["agents-tower/tags"] ?? [];
   return [source, ...tags].filter(Boolean).map(tag => (
     <SourceBadge key={tag} source={tag} />
   ));

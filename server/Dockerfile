@@ -15,16 +15,16 @@ RUN go mod download
 COPY *.go SKILL.md ./
 COPY --from=web-builder /app/web/package.json ./web/
 COPY --from=web-builder /app/web/dist ./web/dist
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /agents-tower .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /agentstower .
 
 FROM alpine:3.23
 ARG VERSION
 LABEL org.opencontainers.image.version=$VERSION
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=go-builder /agents-tower /app/agents-tower
+COPY --from=go-builder /agentstower /app/agentstower
 ENV LISTEN_ADDR=[::]:8888
 ENV DB_PATH=/app/data/data.db
 VOLUME ["/app/data"]
 EXPOSE 8888
-ENTRYPOINT ["/app/agents-tower"]
+ENTRYPOINT ["/app/agentstower"]

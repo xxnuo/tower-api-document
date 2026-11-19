@@ -522,11 +522,11 @@ func handleAdminDeleteUser(cfg Config) http.HandlerFunc {
 
 func printCLIUsage(out io.Writer) {
 	fmt.Fprintln(out, `AgentsTower 命令行工具用法:
-  agents-tower                                      启动 HTTP 与 MCP 服务
-  agents-tower user list                            列出所有注册用户及角色
-  agents-tower admin grant <username>               将指定用户授权为管理员 (admin)
-  agents-tower admin revoke <username>              取消指定用户的管理员权限 (设为 user)
-  agents-tower user reset-password <user> <passwd>  重置指定用户的登录密码`)
+  agentstower                                      启动 HTTP 与 MCP 服务
+  agentstower user list                            列出所有注册用户及角色
+  agentstower admin grant <username>               将指定用户授权为管理员 (admin)
+  agentstower admin revoke <username>              取消指定用户的管理员权限 (设为 user)
+  agentstower user reset-password <user> <passwd>  重置指定用户的登录密码`)
 }
 
 func runCLI(args []string, dbPath string, out io.Writer) error {
@@ -548,7 +548,7 @@ func runCLI(args []string, dbPath string, out io.Writer) error {
 	switch cmd {
 	case "admin":
 		if len(args) < 3 {
-			return errors.New("用法: agents-tower admin <grant|revoke> <username>")
+			return errors.New("用法: agentstower admin <grant|revoke> <username>")
 		}
 		action, username := args[1], args[2]
 		var targetRole string
@@ -575,7 +575,7 @@ func runCLI(args []string, dbPath string, out io.Writer) error {
 
 	case "user":
 		if len(args) < 2 {
-			return errors.New("用法: agents-tower user <list|reset-password>")
+			return errors.New("用法: agentstower user <list|reset-password>")
 		}
 		switch args[1] {
 		case "list":
@@ -597,7 +597,7 @@ func runCLI(args []string, dbPath string, out io.Writer) error {
 			return tw.Flush()
 		case "reset-password":
 			if len(args) < 4 {
-				return errors.New("用法: agents-tower user reset-password <username> <new-password>")
+				return errors.New("用法: agentstower user reset-password <username> <new-password>")
 			}
 			if len(args[3]) < 6 {
 				return errors.New("新密码长度至少需要 6 位")

@@ -214,7 +214,7 @@ func serveSiteIndex(cfg Config, file, contentType string) http.HandlerFunc {
 			site = escaped.String()
 		}
 		writer.Header().Set("Content-Type", contentType+"; charset=utf-8")
-		_, _ = writer.Write(bytes.ReplaceAll(content, []byte("https://agents-tower.invalid"), []byte(site)))
+		_, _ = writer.Write(bytes.ReplaceAll(content, []byte("https://agentstower.invalid"), []byte(site)))
 	}
 }
 

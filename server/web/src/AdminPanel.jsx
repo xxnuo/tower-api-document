@@ -186,7 +186,7 @@ export default function AdminPanel({ currentUser }) {
             <p className="mt-1 text-xs text-muted-foreground">
               首个注册账号默认为管理员；也可通过命令行{" "}
               <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">
-                agents-tower admin grant &lt;username&gt;
+                agentstower admin grant &lt;username&gt;
               </code>{" "}
               手动授权。
             </p>
