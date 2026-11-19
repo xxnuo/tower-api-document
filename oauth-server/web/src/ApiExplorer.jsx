@@ -333,10 +333,10 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
         return;
       }
       const mapKey = `${accountKey}::${endpoint.id}`;
-      if (data.status === 401 || data.status === 403) {
+      if (data.status === 401) {
         setUnavailableMap((prev) => ({
           ...prev,
-          [mapKey]: data.status === 401 ? "未授权 (401)" : "无权限 (403)",
+          [mapKey]: "未授权 (401)",
         }));
       } else if (data.status >= 200 && data.status < 300) {
         setUnavailableMap((prev) => {

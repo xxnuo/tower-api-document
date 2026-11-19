@@ -501,7 +501,7 @@ var towerMCPTools = []mcpToolSpec{
 	// 工时
 	{
 		Name: "list_project_time_logs", Title: "获取项目工时列表",
-		Desc:   "获取指定项目下的所有工时记录，支持按成员与起止日期筛选",
+		Desc:   "获取指定项目下的所有工时记录，支持按成员与起止日期筛选。若返回 403，查询单个任务的工时可使用 list_todo_time_logs",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/time_logs",
 		Params: []mcpParam{
 			pPath("project_id", "项目 ID"),
@@ -929,7 +929,7 @@ func dispatchMCPMethod(
 				"name":    "AgentsTower",
 				"version": "1.0.0",
 			},
-			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（complete_todo / reopen_todo 默认允许所有成员调用）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 		})
 
 	case "ping":
@@ -1377,7 +1377,7 @@ func callTowerForMCP(
 	}
 	if method == http.MethodDelete && !isSafeTodoStateDelete(apiPath) {
 		if cfg.Store == nil || !cfg.Store.GetSettings().AllowMCPDelete {
-			return "服务端已启用硬删除保护：禁止通过 MCP 删除项目、清单、任务或文件资源（仅允许取消任务完成状态或移除负责人；管理员可在「成员管理」后台开启硬删除权限）", true
+			return "服务端已启用硬删除保护：本次删除请求未发送到 Tower。AgentsTower 系统管理员可在「成员管理」中开启「允许 MCP 硬删除」，开启后由 Tower 校验目标资源的删除权限。", true
 		}
 	}
 	statusCode, respBytes, err := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, method, apiPath, rawQuery, bodyBytes)

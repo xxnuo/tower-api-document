@@ -402,10 +402,10 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
       const text = out.result?.content?.[0]?.text || "";
       const isErr = Boolean(out.result?.isError);
       const unavailKey = `${keyTag}::${activeTool.name}`;
-      if (isErr && (text.includes("HTTP 401") || text.includes("HTTP 403"))) {
+      if (isErr && text.includes("HTTP 401")) {
         setUnavailableTools((prev) => ({
           ...prev,
-          [unavailKey]: text.includes("HTTP 401") ? "未授权 (401)" : "无权限 (403)",
+          [unavailKey]: "未授权 (401)",
         }));
       } else if (!isErr) {
         setUnavailableTools((prev) => {
