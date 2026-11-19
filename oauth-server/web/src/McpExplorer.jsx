@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
+import { ConfirmDialog, SourceBadge, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 const STATELESS_PROTOCOL = "2026-07-28";
 const LEGACY_PROTOCOL = "2025-11-25";
@@ -48,7 +48,7 @@ function ToolBadges({ tool }) {
   const source = tool._meta?.["agents-tower/source"];
   const tags = tool._meta?.["agents-tower/tags"] ?? [];
   return [source, ...tags].filter(Boolean).map(tag => (
-    <Badge key={tag} variant="secondary" className="shrink-0 font-mono text-[10px]">{tag}</Badge>
+    <SourceBadge key={tag} source={tag} />
   ));
 }
 

@@ -8,6 +8,7 @@ import {
   XCircleIcon,
 } from "@phosphor-icons/react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +25,21 @@ export const TONE_BADGE = {
   danger: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
   info: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
 };
+
+const SOURCE_BADGE = {
+  API: TONE_BADGE.info,
+  "Multi-API": "border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-300",
+  Web: TONE_BADGE.success,
+};
+
+export function SourceBadge({ source }) {
+  const tone = Object.hasOwn(SOURCE_BADGE, source) ? SOURCE_BADGE[source] : "";
+  return (
+    <Badge variant={tone ? "outline" : "secondary"} className={`shrink-0 font-mono text-[10px] ${tone}`}>
+      {source}
+    </Badge>
+  );
+}
 
 export function BrandMark({ className = "size-4" }) {
   return (

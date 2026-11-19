@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
+import { ConfirmDialog, SourceBadge, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 const METHOD_BADGE = {
   GET: TONE_BADGE.success,
@@ -459,7 +459,7 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
                     </div>
                     <div className="mt-1 flex items-center gap-1.5">
                       {(item.tags ?? ["API"]).map(tag => (
-                        <Badge key={tag} variant="secondary" className="shrink-0 font-mono text-[10px]">{tag}</Badge>
+                        <SourceBadge key={tag} source={tag} />
                       ))}
                       <span className="truncate font-mono text-[11px] text-muted-foreground" title={item.path}>{item.path}</span>
                     </div>
