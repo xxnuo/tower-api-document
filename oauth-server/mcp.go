@@ -138,7 +138,7 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "create_project", Title: "创建项目",
-		Desc:   "在指定团队下创建新项目",
+		Desc:   "普通成员也可在团队中创建项目",
 		Method: http.MethodPost, PathTemplate: "/api/v1/teams/{team_id}/projects", BodyEnvelope: "project",
 		Params: []mcpParam{
 			pPath("team_id", "团队 ID"),
@@ -151,7 +151,7 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "update_project", Title: "更新项目信息",
-		Desc:   "更新指定项目的名称、描述或成员列表",
+		Desc:   "普通成员可更新自己创建或有管理权限的项目；仅参与他人创建的项目时，修改设置需要项目管理权限",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/projects/{project_id}", BodyEnvelope: "project",
 		Params: []mcpParam{
 			pPath("project_id", "项目 ID"),
@@ -162,7 +162,7 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "delete_project", Title: "删除项目",
-		Desc:   "删除指定 Tower 项目（危险操作，会删除真实数据）",
+		Desc:   "普通成员可删除自己创建或有管理权限的项目；仅参与项目不足以删除。受 MCP 硬删除保护",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/projects/{project_id}",
 		Params: []mcpParam{pPath("project_id", "项目 ID")},
 	},

@@ -40,7 +40,7 @@ export const TOWER_API_CATALOG = [
   {
     id: "projects-create",
     group: "项目",
-    name: "创建项目",
+    name: "创建项目（普通成员可操作）",
     method: "POST",
     path: "/api/v1/teams/{team_id}/projects",
     defaultBody: '{\n  "project": {\n    "name": "Project",\n    "desc": "Project Desc",\n    "member_ids": [],\n    "color_id": 0,\n    "icon_id": 0\n  }\n}',
@@ -49,12 +49,12 @@ export const TOWER_API_CATALOG = [
   {
     id: "projects-update",
     group: "项目",
-    name: "更新项目信息",
+    name: "更新项目信息（创建者或项目管理员）",
     method: "PATCH",
     path: "/api/v1/projects/{id}",
     defaultBody: '{\n  "project": {\n    "name": "Project",\n    "desc": "Project desc",\n    "member_ids": []\n  }\n}',
   },
-  { id: "projects-delete", group: "项目", name: "删除项目", method: "DELETE", path: "/api/v1/projects/{id}" },
+  { id: "projects-delete", group: "项目", name: "删除项目（创建者或项目管理员）", method: "DELETE", path: "/api/v1/projects/{id}" },
   { id: "projects-members", group: "项目", name: "获取项目成员", method: "GET", path: "/api/v1/projects/{project_id}/members" },
 
   // 成员
