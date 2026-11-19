@@ -16,19 +16,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
-	defaultMCPProtocolVersion = "2025-03-26"
-	defaultListPageSize       = 20
-	maxListPageSize           = 50
+	defaultListPageSize = 20
+	maxListPageSize     = 50
 )
-
-var supportedMCPVersions = map[string]bool{
-	"2025-06-18": true,
-	"2025-03-26": true,
-	"2024-11-05": true,
-}
 
 type mcpParam struct {
 	Name     string
@@ -795,12 +790,7 @@ func extractMCPKey(req *http.Request) string {
 	return ""
 }
 
-type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
-}
+type mcpAccountKey struct{}
 
 func setMCPHeaders(writer http.ResponseWriter) {
 	writer.Header().Set("Access-Control-Allow-Origin", "*")
@@ -814,7 +804,60 @@ func handleMCP(cfg Config) http.HandlerFunc {
 	for _, spec := range towerMCPTools {
 		toolIndex[spec.Name] = spec
 	}
-	toolDefs := listMCPToolDefinitions()
+	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: "1.0.0"}, &mcp.ServerOptions{
+		Instructions: "网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+	})
+	for _, def := range listMCPToolDefinitions() {
+		data, err := json.Marshal(def)
+		if err != nil {
+			panic(err)
+		}
+		var tool mcp.Tool
+		if err := json.Unmarshal(data, &tool); err != nil {
+			panic(err)
+		}
+		server.AddTool(&tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			acc := ctx.Value(mcpAccountKey{}).(*StoredAccount)
+			args := map[string]any{}
+			if len(req.Params.Arguments) > 0 {
+				if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+					return nil, err
+				}
+			}
+			name := req.Params.Name
+			text, isErr := executeMCPTool(ctx, cfg, acc.MCPAPIKey, acc, toolIndex, name, args)
+			if !isErr {
+				heading := resultProfiles[name].heading
+				var scope []string
+				for _, param := range toolIndex[name].Params {
+					if param.In == "path" {
+						scope = append(scope, param.Name+"="+stringifyArg(args[param.Name]))
+					}
+				}
+				if len(scope) > 0 {
+					heading += "（" + strings.Join(scope, "，") + "）"
+				}
+				text = heading + "\n" + text
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}, IsError: isErr}, nil
+		})
+	}
+	server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			result, err := next(ctx, method, req)
+			if list, ok := result.(*mcp.ListToolsResult); ok && err == nil {
+				acc := ctx.Value(mcpAccountKey{}).(*StoredAccount)
+				for i, t := range list.Tools {
+					if t.Name == "rename_team" && !ownsAnyTeam(ctx, cfg, acc.AccessToken) {
+						list.Tools = append(list.Tools[:i:i], list.Tools[i+1:]...)
+						break
+					}
+				}
+			}
+			return result, err
+		}
+	})
+	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 
 	return func(writer http.ResponseWriter, req *http.Request) {
 		setMCPHeaders(writer)
@@ -865,182 +908,15 @@ func handleMCP(cfg Config) http.HandlerFunc {
 			return
 		}
 
-		if sessionID := req.Header.Get("Mcp-Session-Id"); sessionID != "" {
-			writer.Header().Set("Mcp-Session-Id", sessionID)
+		// Older curl examples and the web inspector omit transport negotiation headers.
+		if accept := req.Header.Get("Accept"); accept == "" || accept == "*/*" || accept == "application/json" {
+			req.Header.Set("Accept", "application/json, text/event-stream")
 		}
-
-		bodyBytes, err := io.ReadAll(io.LimitReader(req.Body, 2<<20))
-		if err != nil {
-			writeJSON(writer, http.StatusBadRequest, rpcError(nil, -32700, "failed to read body"))
-			return
+		if req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "application/json")
 		}
-		trimmed := bytes.TrimSpace(bodyBytes)
-		if len(trimmed) == 0 {
-			writeJSON(writer, http.StatusBadRequest, rpcError(nil, -32700, "empty request body"))
-			return
-		}
-
-		isBatch := trimmed[0] == '['
-		var rpcReqs []jsonRPCRequest
-		if isBatch {
-			if err := json.Unmarshal(trimmed, &rpcReqs); err != nil || len(rpcReqs) == 0 {
-				writeJSON(writer, http.StatusBadRequest, rpcError(nil, -32700, "invalid JSON-RPC batch"))
-				return
-			}
-		} else {
-			var single jsonRPCRequest
-			if err := json.Unmarshal(trimmed, &single); err != nil {
-				writeJSON(writer, http.StatusBadRequest, rpcError(nil, -32700, "invalid JSON-RPC request"))
-				return
-			}
-			rpcReqs = []jsonRPCRequest{single}
-		}
-
-		responses := make([]map[string]any, 0, len(rpcReqs))
-		for _, rpcReq := range rpcReqs {
-			if isNotification(rpcReq) {
-				continue
-			}
-			resp := dispatchMCPMethod(req.Context(), writer, cfg, mcpKey, acc, toolIndex, toolDefs, rpcReq)
-			responses = append(responses, resp)
-		}
-
-		if len(responses) == 0 {
-			writer.WriteHeader(http.StatusAccepted)
-			return
-		}
-		if isBatch {
-			writeJSON(writer, http.StatusOK, responses)
-			return
-		}
-		writeJSON(writer, http.StatusOK, responses[0])
-	}
-}
-
-func isNotification(rpcReq jsonRPCRequest) bool {
-	if len(rpcReq.ID) == 0 || string(rpcReq.ID) == "null" {
-		return strings.HasPrefix(rpcReq.Method, "notifications/")
-	}
-	return false
-}
-
-func rpcResult(id json.RawMessage, result any) map[string]any {
-	return map[string]any{
-		"jsonrpc": "2.0",
-		"id":      rawOrNull(id),
-		"result":  result,
-	}
-}
-
-func rpcError(id json.RawMessage, code int, message string) map[string]any {
-	return map[string]any{
-		"jsonrpc": "2.0",
-		"id":      rawOrNull(id),
-		"error": map[string]any{
-			"code":    code,
-			"message": message,
-		},
-	}
-}
-
-func rawOrNull(id json.RawMessage) any {
-	if len(id) == 0 {
-		return nil
-	}
-	return id
-}
-
-func dispatchMCPMethod(
-	ctx context.Context,
-	writer http.ResponseWriter,
-	cfg Config,
-	mcpKey string,
-	acc *StoredAccount,
-	toolIndex map[string]mcpToolSpec,
-	toolDefs []map[string]any,
-	rpcReq jsonRPCRequest,
-) map[string]any {
-	switch rpcReq.Method {
-	case "initialize":
-		var initParams struct {
-			ProtocolVersion string `json:"protocolVersion"`
-		}
-		_ = json.Unmarshal(rpcReq.Params, &initParams)
-		version := defaultMCPProtocolVersion
-		if supportedMCPVersions[initParams.ProtocolVersion] {
-			version = initParams.ProtocolVersion
-		}
-		if writer.Header().Get("Mcp-Session-Id") == "" {
-			if sid, err := randomState(); err == nil {
-				writer.Header().Set("Mcp-Session-Id", sid)
-			}
-		}
-		return rpcResult(rpcReq.ID, map[string]any{
-			"protocolVersion": version,
-			"capabilities": map[string]any{
-				"tools": map[string]any{"listChanged": false},
-			},
-			"serverInfo": map[string]any{
-				"name":    "AgentsTower",
-				"version": "1.0.0",
-			},
-			"instructions": "按关键词搜索任务请用 search_todos。指定成员、项目、团队或完成状态时请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
-		})
-
-	case "ping":
-		return rpcResult(rpcReq.ID, map[string]any{})
-
-	case "tools/list":
-		if !ownsAnyTeam(ctx, cfg, acc.AccessToken) {
-			visible := make([]map[string]any, 0, len(toolDefs))
-			for _, def := range toolDefs {
-				if def["name"] != "rename_team" {
-					visible = append(visible, def)
-				}
-			}
-			toolDefs = visible
-		}
-		return rpcResult(rpcReq.ID, map[string]any{
-			"tools": toolDefs,
-		})
-
-	case "tools/call":
-		var callParams struct {
-			Name      string         `json:"name"`
-			Arguments map[string]any `json:"arguments"`
-		}
-		if err := json.Unmarshal(rpcReq.Params, &callParams); err != nil || callParams.Name == "" {
-			return rpcError(rpcReq.ID, -32602, "invalid tools/call params")
-		}
-		if callParams.Arguments == nil {
-			callParams.Arguments = map[string]any{}
-		}
-		text, isErr := executeMCPTool(ctx, cfg, mcpKey, acc, toolIndex, callParams.Name, callParams.Arguments)
-		if !isErr {
-			profile := resultProfiles[callParams.Name]
-			heading := profile.heading
-			if spec, ok := toolIndex[callParams.Name]; ok {
-				var scope []string
-				for _, param := range spec.Params {
-					if param.In == "path" {
-						scope = append(scope, param.Name+"="+stringifyArg(callParams.Arguments[param.Name]))
-					}
-				}
-				if len(scope) > 0 {
-					heading += "（" + strings.Join(scope, "，") + "）"
-				}
-			}
-			text = heading + "\n" + text
-		}
-		return rpcResult(rpcReq.ID, map[string]any{
-			"content": []map[string]any{
-				{"type": "text", "text": text},
-			},
-			"isError": isErr,
-		})
-
-	default:
-		return rpcError(rpcReq.ID, -32601, "Method not found: "+rpcReq.Method)
+		req.Body = http.MaxBytesReader(writer, req.Body, 2<<20)
+		transport.ServeHTTP(writer, req.WithContext(context.WithValue(req.Context(), mcpAccountKey{}, acc)))
 	}
 }
 
