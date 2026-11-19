@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-var gatewayTaskTools = []mcpToolSpec{
+var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools)
+
+var projectTaskTools = []mcpToolSpec{
 	{
 		Name: "get_project_task_fields", Title: "查询项目标签和自定义字段",
 		Desc:   "列出项目可用的标签 ID、自定义字段键与选项值，供 create_todo 和 update_todo 使用。需要网页登录。",
@@ -76,7 +78,11 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		}
 	}
 	for _, p := range spec.Params {
-		if p.Required && strings.HasSuffix(p.Name, "_id") && !guidPattern.MatchString(stringifyArg(args[p.Name])) {
+		value, present := args[p.Name]
+		if p.Required && (!present || value == nil) {
+			return nil, fmt.Errorf("%w：缺少 %s", errWebArguments, p.Name)
+		}
+		if present && strings.HasSuffix(p.Name, "_id") && !guidPattern.MatchString(stringifyArg(value)) {
 			return nil, fmt.Errorf("%w：%s 须为 Tower GUID", errWebArguments, p.Name)
 		}
 	}
@@ -88,6 +94,9 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		return nil, err
 	}
 	defer client.save()
+	if spec.Name == "mark_notification_read" {
+		return client.markNotificationRead(ctx, cfg, acc, stringifyArg(args["team_id"]), stringifyArg(args["notification_id"]))
+	}
 	projectID := stringifyArg(args["project_id"])
 	if spec.Name == "get_project_task_fields" {
 		return client.projectFields(ctx, projectID)
@@ -98,6 +107,8 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		return nil, err
 	}
 	switch spec.Name {
+	case "edit_my_todo_comment":
+		return client.editMyComment(ctx, cfg, acc, pagePath, todoID, stringifyArg(args["comment_id"]), args["content"])
 	case "move_todo_in_project":
 		return client.moveTodo(ctx, pagePath, todoID, projectID, stringifyArg(args["todolist_id"]))
 	case "list_todo_history":

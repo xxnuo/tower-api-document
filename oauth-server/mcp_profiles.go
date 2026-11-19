@@ -71,6 +71,8 @@ var resultProfiles = map[string]resultProfile{
 	"list_notifications":                     {"团队通知", "id read progress target_guid notifyable_type created_at subject_str action_str content_str extra_info"},
 	"advanced_search_todos":                  {"高级任务搜索结果", "keyword scope status matched_count scanned_count incomplete_reason items truncated warnings"},
 	"search_todos":                           {"任务搜索结果", "keyword tag page count has_more next_page items"},
+	"edit_my_todo_comment":                   {"自己的评论已更新", "*"},
+	"mark_notification_read":                 {"通知已读", "*"},
 	"list_todo_history":                      {"任务历史", "offset total has_more next_offset items"},
 	"move_todo_in_project":                   {"项目内任务移动", "*"},
 	"get_project_task_fields":                {"项目字段与标签", "*"},
