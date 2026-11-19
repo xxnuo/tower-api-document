@@ -87,8 +87,12 @@ func TestDeclaredSearchArguments(t *testing.T) {
 		if _, ok := fields["keyword"]; !ok {
 			t.Fatalf("%s lacks keyword", name)
 		}
-		if name == "search_todos" && len(fields) != 1 {
-			t.Fatalf("web search fields: %v", fields)
+		if name == "search_todos" {
+			for _, key := range []string{"page", "target_gid", "member_guid", "category", "sort", "exclude_trash"} {
+				if fields[key] == nil {
+					t.Fatalf("missing web filter %s", key)
+				}
+			}
 		}
 		if name == "advanced_search_todos" {
 			for _, key := range []string{"team_id", "project_id", "member_id", "status", "limit"} {

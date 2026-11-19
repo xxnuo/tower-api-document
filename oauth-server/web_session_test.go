@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -36,7 +37,7 @@ func TestWebEmailLoginAndSearchParse(t *testing.T) {
 			http.Error(w, "query", http.StatusBadRequest)
 			return
 		}
-		w.Write([]byte(`<ul class="results"><li data-category="Todo"><p class="result-title" data-completed="true"><a href="/projects/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/todos/cccccccccccccccccccccccccccccccc">任务 76083</a></p><span class="result-time" title="2026-11-19 11:18"></span></li></ul>`))
+		w.Write([]byte(`<span class="result-count">1</span><ul class="results"><li data-category="Todo"><p class="result-title" data-completed="true"><a href="/projects/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/todos/cccccccccccccccccccccccccccccccc">任务 76083</a></p><span class="result-time" title="2026-11-19 11:18"></span></li></ul>`))
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -53,7 +54,7 @@ func TestWebEmailLoginAndSearchParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := restored.searchTodos(context.Background(), "76083")
+	result, err := restored.searchTodos(context.Background(), url.Values{"keyword": {"76083"}, "page": {"1"}, "category": {"2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,9 +81,12 @@ func TestSearchIncludesCurrentTeamAndTeamSwitcher(t *testing.T) {
 		w.Write([]byte(`<input id="team-id" value="1"><input id="team-guid" value="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><a href="/teams/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb">其他</a>`))
 	})
 	var currentSearched bool
-	mux.HandleFunc("GET /teams/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/search", func(w http.ResponseWriter, r *http.Request) { currentSearched = true })
+	mux.HandleFunc("GET /teams/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/search", func(w http.ResponseWriter, r *http.Request) {
+		currentSearched = true
+		w.Write([]byte(`<span class="result-count">0</span>`))
+	})
 	mux.HandleFunc("GET /teams/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/search", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<ul class="results"><li data-category="Todo"><p class="result-title" data-completed="false"><a href="/projects/cccccccccccccccccccccccccccccccc/todos/dddddddddddddddddddddddddddddddd">命中</a></p></li></ul>`))
+		w.Write([]byte(`<span class="result-count">1</span><ul class="results"><li data-category="Todo"><p class="result-title" data-completed="false"><a href="/projects/cccccccccccccccccccccccccccccccc/todos/dddddddddddddddddddddddddddddddd">命中</a></p></li></ul>`))
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -90,12 +94,39 @@ func TestSearchIncludesCurrentTeamAndTeamSwitcher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := client.searchTodos(context.Background(), "76083")
+	result, err := client.searchTodos(context.Background(), url.Values{"keyword": {"76083"}, "page": {"1"}, "category": {"2"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	items, _ := result["items"].([]any)
 	if !currentSearched || len(items) != 1 || items[0].(map[string]any)["id"] != "dddddddddddddddddddddddddddddddd" {
 		t.Fatal(result)
+	}
+}
+
+func TestWebSearchLastPageWithFilters(t *testing.T) {
+	query, err := webSearchQuery(map[string]any{"keyword": "测试", "page": 2, "member_guid": "member", "target_gid": "gid://tower2/Project/123", "sort": 2, "exclude_trash": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /launchpad/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<input id="team-guid" value="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">`))
+	})
+	mux.HandleFunc("GET /teams/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != query.Encode() || query.Get("exclude_trash") != "false" || query.Get("category") != "2" {
+			t.Error(r.URL)
+		}
+		w.Write([]byte(`<span class="result-count">21</span><ul class="results" data-page="2"><li data-category="Todo"><p class="result-title"><a class="tag" href="/search">标签</a><a href="/todos/cccccccccccccccccccccccccccccccc">任务</a></p></li></ul><a id="btn-load-more">加载更多</a>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	client, err := newWebClient(srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.searchTodos(context.Background(), query)
+	if err != nil || result["has_more"] != false || result["next_page"] != nil || result["items"].([]any)[0].(map[string]any)["title"] != "任务" {
+		t.Fatal(result, err)
 	}
 }

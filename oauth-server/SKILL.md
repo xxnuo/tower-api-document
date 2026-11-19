@@ -25,7 +25,7 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 
 - 服务端会自动管理并续期底层 Tower OAuth Token，`AGENTS_TOWER_API_KEY` 长期有效（除非用户在控制台手动重置）。
 
-按关键词查找任务可调用 `search_todos`，只需传入 `keyword`。指定成员、项目、团队或完成状态时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
+按关键词查找任务可调用 `search_todos`，必填 `keyword`。可选 `target_gid`、`member_guid`、`category`、`sort`、`exclude_trash`。每次返回各团队的一页，收到 `next_page` 时保留筛选条件并将其作为 `page` 继续。要按 API 项目 ID、团队或完成状态扫描时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
 
 ## 2. 标准 ID 查询链路
 

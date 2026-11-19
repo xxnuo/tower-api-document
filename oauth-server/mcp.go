@@ -656,7 +656,13 @@ func listMCPToolDefinitions() []map[string]any {
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"keyword": map[string]any{"type": "string", "description": "搜索关键词"},
+					"page":          map[string]any{"type": "integer", "minimum": 1, "description": "页码，默认 1。保留其他参数，按 next_page 继续。每团队每页 20 条。"},
+					"category":      map[string]any{"type": "integer", "description": "Tower 网页内容类型，默认 2 任务。-1 全部、1 清单、4 文件或附件、7 评论、15 项目、18 知识库文档。"},
+					"target_gid":    map[string]any{"type": "string", "description": "网页项目或知识库 GID，如 gid://tower2/Project/123。省略时搜索所有项目。"},
+					"member_guid":   map[string]any{"type": "string", "description": "网页成员筛选器中的成员 GUID。"},
+					"sort":          map[string]any{"type": "integer", "enum": []int{1, 2}, "description": "1 时间顺序（默认），2 相关度。"},
+					"exclude_trash": map[string]any{"type": "boolean", "default": true, "description": "隐藏回收站内容。"},
+					"keyword":       map[string]any{"type": "string", "description": "搜索关键词"},
 				},
 				"required": []string{"keyword"},
 			},

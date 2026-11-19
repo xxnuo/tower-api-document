@@ -801,12 +801,17 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			} else {
 				acc, accErr = cfg.Store.GetByAuth(strings.TrimSpace(payload.AccessToken))
 			}
-			if len(qVals) > 1 || (len(qVals) == 1 && !qVals.Has("keyword")) {
-				statusCode, result = http.StatusBadRequest, map[string]any{"error": "搜索任务只接受 keyword；筛选参数请用于高级搜索"}
+			args := map[string]any{}
+			for k, v := range qVals {
+				args[k] = v[0]
+			}
+			query, parseErr := webSearchQuery(args)
+			if parseErr != nil {
+				statusCode, result = http.StatusBadRequest, map[string]any{"error": parseErr.Error()}
 			} else if accErr != nil {
 				statusCode, result = http.StatusNotFound, map[string]any{"error": "找不到对应 Tower 账号"}
 			} else {
-				payloadResult, searchErr := runWebSearch(req.Context(), cfg, acc, qVals.Get("keyword"))
+				payloadResult, searchErr := runWebSearch(req.Context(), cfg, acc, query)
 				if searchErr != nil {
 					statusCode = http.StatusBadGateway
 					if errors.Is(searchErr, errNoWebSession) {

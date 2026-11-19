@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	dom "golang.org/x/net/html"
 	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,10 +31,6 @@ var (
 	emailPattern       = regexp.MustCompile(`id="user-email" value="([^"]*)"`)
 	hiddenPattern      = regexp.MustCompile(`id="([^"]+)" value="([^"]*)"`)
 	teamHrefPattern    = regexp.MustCompile(`href="/teams/([a-f0-9]{32})"`)
-	searchItemPattern  = regexp.MustCompile(`(?s)<li data-category="([^"]*)">(.*?)</li>`)
-	searchLinkPattern  = regexp.MustCompile(`(?s)<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>`)
-	completedPattern   = regexp.MustCompile(`data-completed="(true|false)"`)
-	resultTimePattern  = regexp.MustCompile(`class="result-time" title="([^"]*)"`)
 	resultCountPattern = regexp.MustCompile(`class="result-count">\s*(\d+)`)
 	todoIDPattern      = regexp.MustCompile(`/todos/([a-f0-9]{32})`)
 	tagPattern         = regexp.MustCompile(`(?s)<[^>]+>`)
@@ -271,58 +269,70 @@ func (client *webClient) loginWithEmail(ctx context.Context, email, password str
 	return webEmail, nil
 }
 
-func (client *webClient) searchTodos(ctx context.Context, keyword string) (map[string]any, error) {
-	keyword = strings.TrimSpace(keyword)
-	if keyword == "" {
+func webSearchQuery(args map[string]any) (url.Values, error) {
+	q := url.Values{"page": {"1"}, "category": {"2"}, "exclude_trash": {"true"}}
+	for key, val := range args {
+		v := stringifyArg(val)
+		switch key {
+		case "keyword", "target_gid", "member_guid":
+			if _, ok := val.(string); !ok {
+				return nil, fmt.Errorf("%s 须为字符串", key)
+			}
+		case "page", "category":
+			n, err := strconv.ParseInt(v, 10, 32)
+			if err != nil || (n < 1 && !(key == "category" && n == -1)) {
+				return nil, fmt.Errorf("%s 无效", key)
+			}
+		case "sort":
+			if v != "1" && v != "2" {
+				return nil, errors.New("sort 须为 1 或 2")
+			}
+		case "exclude_trash":
+			if v != "true" && v != "false" {
+				return nil, errors.New("exclude_trash 须为布尔值")
+			}
+		default:
+			return nil, fmt.Errorf("未知搜索参数 %s", key)
+		}
+		q.Set(key, v)
+	}
+	if q.Get("keyword") == "" {
 		return nil, errors.New("keyword 不能为空")
 	}
-	const limit = defaultListPageSize
+	return q, nil
+}
+
+func (client *webClient) searchTodos(ctx context.Context, query url.Values) (map[string]any, error) {
 	teams, err := client.teamGUIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	items := make([]any, 0, limit)
-	seen := map[string]struct{}{}
+	page, _ := strconv.Atoi(query.Get("page"))
+	items := []any{}
+	more := false
 	for _, team := range teams {
-		query := url.Values{
-			"keyword":       {keyword},
-			"category":      {"2"},
-			"exclude_trash": {"true"},
+		text, err := client.get(ctx, "/teams/"+team+"/search?"+query.Encode())
+		if err != nil {
+			return nil, err
 		}
-		for page := 1; page <= 3 && len(items) < limit; page++ {
-			if page > 1 {
-				query.Set("page", fmt.Sprint(page))
-			}
-			text, getErr := client.get(ctx, "/teams/"+team+"/search?"+query.Encode())
-			if getErr != nil {
-				return nil, getErr
-			}
-			added := 0
-			for _, item := range parseSearchItems(text) {
-				id := fmt.Sprint(item["id"])
-				if _, ok := seen[id]; ok {
-					continue
-				}
-				seen[id] = struct{}{}
-				item["team"] = team
-				items = append(items, item)
-				added++
-				if len(items) >= limit {
-					break
-				}
-			}
-			if added == 0 || !strings.Contains(text, "btn-load-more") {
-				break
-			}
+		total, err := strconv.Atoi(firstMatch(resultCountPattern, text))
+		if err != nil {
+			return nil, errors.New("无法读取 Tower 搜索结果总数，请确认网页登录状态")
+		}
+		// Tower 网页每个团队每页返回 20 条，包括末页在内均可能显示加载更多按钮。
+		if int64(total) > int64(page)*20 {
+			more = true
+		}
+		for _, item := range parseSearchItems(text) {
+			item["team"] = team
+			items = append(items, item)
 		}
 	}
-	return map[string]any{
-		"keyword": keyword,
-
-		"count": len(items),
-		"items": items,
-	}, nil
+	result := map[string]any{"keyword": query.Get("keyword"), "items": items, "count": len(items), "page": page, "has_more": more}
+	if more {
+		result["next_page"] = page + 1
+	}
+	return result, nil
 }
 
 func (client *webClient) teamGUIDs(ctx context.Context) ([]string, error) {
@@ -512,12 +522,11 @@ func useWebClient(ctx context.Context, cfg Config, acc *StoredAccount) (*webClie
 }
 
 func executeSearchTodos(ctx context.Context, cfg Config, _ string, acc *StoredAccount, args map[string]any) (string, bool) {
-	for k := range args {
-		if k != "keyword" {
-			return webToolText("search_todos", nil, errors.New("搜索任务只接受 keyword；按条件查询请使用 advanced_search_todos"))
-		}
+	query, err := webSearchQuery(args)
+	if err != nil {
+		return webToolText("search_todos", nil, err)
 	}
-	payload, err := runWebSearch(ctx, cfg, acc, stringifyArg(args["keyword"]))
+	payload, err := runWebSearch(ctx, cfg, acc, query)
 	return webToolText("search_todos", payload, err)
 }
 
@@ -551,13 +560,13 @@ func executeRemoveTodoProject(ctx context.Context, cfg Config, acc *StoredAccoun
 	return webToolText("remove_todo_project", payload, err)
 }
 
-func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, keyword string) (map[string]any, error) {
+func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, query url.Values) (map[string]any, error) {
 	client, err := useWebClient(ctx, cfg, acc)
 	if err != nil {
 		return nil, err
 	}
 	defer client.save()
-	return client.searchTodos(ctx, keyword)
+	return client.searchTodos(ctx, query)
 }
 
 func webToolText(tool string, payload map[string]any, err error) (string, bool) {
@@ -570,27 +579,50 @@ func webToolText(tool string, payload map[string]any, err error) (string, bool) 
 }
 
 func parseSearchItems(page string) []map[string]any {
-	matches := searchItemPattern.FindAllStringSubmatch(page, -1)
-	items := make([]map[string]any, 0, len(matches))
-	for _, match := range matches {
-		link := searchLinkPattern.FindStringSubmatch(match[2])
+	doc, _ := dom.Parse(strings.NewReader(page))
+	var items []map[string]any
+	for row := range doc.Descendants() {
+		category := attr(row, "data-category")
+		if row.Data != "li" || category == "" {
+			continue
+		}
+		item := map[string]any{"category": category}
+		var link *dom.Node
+		for n := range row.Descendants() {
+			switch {
+			case n.Data == "p" && strings.Contains(attr(n, "class"), "result-title"):
+				if v := attr(n, "data-completed"); v != "" {
+					item["completed"] = v == "true"
+				}
+				for a := range n.Descendants() {
+					if a.Data == "a" && attr(a, "class") != "tag" && attr(a, "href") != "" {
+						link = a
+						break
+					}
+				}
+			case n.Data == "a" && strings.Contains(attr(n, "class"), "attachment-name"):
+				link = n
+			case attr(n, "class") == "result-time":
+				item["time"] = attr(n, "title")
+			}
+		}
 		if link == nil {
 			continue
 		}
-		completed := firstMatch(completedPattern, match[2]) == "true"
-		item := map[string]any{
-			"id":        firstMatch(todoIDPattern, link[1]),
-			"title":     plainText(link[2]),
-			"category":  match[1],
-			"url":       html.UnescapeString(link[1]),
-			"completed": completed,
+		href := attr(link, "href")
+		var title strings.Builder
+		for n := range link.Descendants() {
+			if n.Type == dom.TextNode {
+				title.WriteString(n.Data)
+			}
 		}
-		if when := firstMatch(resultTimePattern, match[2]); when != "" {
-			item["time"] = html.UnescapeString(when)
+		item["title"] = strings.Join(strings.Fields(title.String()), " ")
+		item["url"] = href
+		id := firstMatch(todoIDPattern, href)
+		if id == "" || category != "Todo" {
+			id = href
 		}
-		if item["id"] == "" {
-			item["id"] = item["url"]
-		}
+		item["id"] = id
 		items = append(items, item)
 	}
 	return items
