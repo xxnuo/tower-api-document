@@ -906,8 +906,6 @@ ${mcpConfigSnippet}
             >
               {shareStatus === "分享信息已复制" ? <CheckIcon className="size-4" /> : <ShareNetworkIcon className="size-4" />}
             </Button>
-            <span role="status" className="sr-only">{shareStatus}</span>
-
             <Button
               type="button"
               variant="outline"
@@ -925,6 +923,7 @@ ${mcpConfigSnippet}
               )}
             </Button>
           </div>
+          <p role="status" className={shareStatus ? "text-xs text-sidebar-foreground" : "sr-only"}>{shareStatus}</p>
         </div>
       </aside>
 

@@ -14,28 +14,12 @@ export function ClipboardProvider({ children }) {
   const field = useRef(null);
 
   async function copy(text) {
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
+    if (window.location.protocol === "https:" && navigator.clipboard?.writeText) {
       try {
         await navigator.clipboard.writeText(text);
         return true;
       } catch {
         // Continue with manual copying when clipboard access is denied.
-      }
-    } else if (!window.isSecureContext) {
-      const previousFocus = document.activeElement;
-      const input = document.createElement("textarea");
-      input.value = text;
-      input.readOnly = true;
-      input.className = "fixed top-0 left-0 opacity-0 pointer-events-none";
-      document.body.append(input);
-      try {
-        input.select();
-        if (document.execCommand("copy")) return true;
-      } catch {
-        // The browser may disallow clipboard access on HTTP.
-      } finally {
-        input.remove();
-        previousFocus?.focus({ preventScroll: true });
       }
     }
     setManualText(text);
