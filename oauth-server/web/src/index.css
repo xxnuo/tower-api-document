@@ -20,12 +20,13 @@
     scrollbar-color: var(--border) transparent;
   }
 
-  body {
-    @apply bg-background text-foreground;
-  }
-
   html {
     @apply font-serif;
+    font-size: 16.5px;
+  }
+
+  body {
+    @apply bg-background text-foreground text-base leading-relaxed;
   }
 
   code,

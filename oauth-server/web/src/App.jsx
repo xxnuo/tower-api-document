@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  CaretUpDownIcon,
   CheckIcon,
   CopyIcon,
+  CpuIcon,
   DesktopIcon,
   DownloadSimpleIcon,
+  KeyIcon,
+  LockKeyIcon,
   MoonIcon,
   PlusIcon,
+  SignOutIcon,
   SunIcon,
+  TerminalWindowIcon,
+  UsersIcon,
 } from "@phosphor-icons/react";
 import AdminPanel from "./AdminPanel.jsx";
 import ApiExplorer from "./ApiExplorer.jsx";
@@ -655,10 +662,10 @@ export default function App() {
   }
 
   const navItems = [
-    { id: "creds", label: "凭据中心" },
-    { id: "mcp", label: "MCP 调试" },
-    { id: "explorer", label: "API 调试" },
-    ...(authUser.role === "admin" ? [{ id: "admin", label: "成员管理" }] : []),
+    { id: "creds", label: "凭据中心", icon: KeyIcon, badge: store.items.length > 0 ? `${store.items.length}` : null },
+    { id: "mcp", label: "MCP 调试", icon: CpuIcon, badge: mcpKey ? "就绪" : null },
+    { id: "explorer", label: "API 调试", icon: TerminalWindowIcon },
+    ...(authUser.role === "admin" ? [{ id: "admin", label: "成员管理", icon: UsersIcon }] : []),
   ];
 
   const telemetryCells = [
@@ -685,108 +692,222 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-dvh lg:h-dvh lg:overflow-hidden flex flex-col bg-background text-foreground">
-      <header className="shrink-0 border-b bg-card">
-        <div className="flex h-12 items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex items-center gap-4 min-w-0">
-            <a
-              href="#creds"
-              onClick={(e) => {
-                e.preventDefault();
-                navigateToTab("creds");
-              }}
-              className="flex items-center gap-2 shrink-0 text-foreground"
-            >
-              <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <BrandMark className="size-3.5" />
-              </span>
-              <span className="font-heading text-sm font-semibold tracking-tight">AgentsTower</span>
-            </a>
+    <div className="min-h-dvh lg:h-dvh lg:overflow-hidden flex flex-col md:flex-row bg-background text-foreground">
+      {/* 桌面端精致侧边栏 */}
+      <aside className="hidden md:flex md:w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground select-none">
+        {/* 顶部 Brand 区域 */}
+        <div className="p-4 border-b border-sidebar-border flex items-center justify-between gap-2">
+          <a
+            href="#creds"
+            onClick={(e) => {
+              e.preventDefault();
+              navigateToTab("creds");
+            }}
+            className="flex items-center gap-2.5 min-w-0 group"
+          >
+            <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-xs transition-transform group-hover:scale-105">
+              <BrandMark className="size-4" />
+            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="font-heading text-sm font-semibold tracking-tight text-sidebar-foreground leading-tight">AgentsTower</span>
+              <span className="text-[10px] text-muted-foreground font-mono leading-none mt-0.5">Tower MCP Gateway</span>
+            </div>
+          </a>
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono text-muted-foreground">
+            v0.1
+          </Badge>
+        </div>
 
-            <Separator orientation="vertical" className="hidden md:block h-4" />
-
-            <nav aria-label="主导航" className="hidden md:flex items-center gap-1 h-12">
-              {navItems.map((item) => {
-                const active = activeTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => navigateToTab(item.id)}
-                    className={`relative flex h-full items-center px-3 text-xs font-medium transition-colors cursor-pointer ${
-                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <span>{item.label}</span>
-                    {active && (
-                      <span
-                        aria-hidden="true"
-                        className="absolute inset-x-1.5 bottom-0 h-[2px] bg-foreground"
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {store.items.length > 0 && (
+        {/* 中间主要区域：Tower 账号卡片 + 导航链接 */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          {store.items.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between px-1 text-[11px] font-medium text-muted-foreground">
+                <span>当前 Tower 账号</span>
+                <span className="font-mono text-[10px]">{store.items.length} 个可用</span>
+              </div>
               <Select value={creds?.id || ""} onValueChange={handleSelectAccount}>
-                <SelectTrigger size="sm" aria-label="切换当前 Tower 账号" className="max-w-[160px] text-xs">
+                <SelectTrigger size="sm" aria-label="切换当前 Tower 账号" className="w-full text-xs h-8">
                   {user?.gavatar ? (
-                    <img src={user.gavatar} alt="" className="size-4 rounded object-cover" />
+                    <img src={user.gavatar} alt="" className="size-3.5 rounded object-cover shrink-0" />
                   ) : (
-                    <span className="flex size-4 shrink-0 items-center justify-center rounded bg-muted font-mono text-[10px] font-semibold">
+                    <span className="flex size-3.5 shrink-0 items-center justify-center rounded bg-muted font-mono text-[9px] font-semibold">
                       {towerAccountLabel.slice(0, 1).toUpperCase()}
                     </span>
                   )}
                   <SelectValue>{towerAccountLabel}</SelectValue>
                 </SelectTrigger>
-                <SelectContent align="end">
+                <SelectContent align="start" className="w-56">
                   {store.items.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
+                    <SelectItem key={item.id} value={item.id} className="text-xs">
                       {item.user?.nickname || item.user?.email || item.token?.email || "已授权成员"}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
+            </div>
+          )}
+
+          <nav aria-label="主导航" className="space-y-1">
+            <div className="px-1 pb-1 text-[11px] font-medium text-muted-foreground">功能导航</div>
+            {navItems.map((item) => {
+              const active = activeTab === item.id;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => navigateToTab(item.id)}
+                  className={`w-full flex items-center justify-between rounded-lg px-2.5 py-2 text-sm font-medium transition-colors cursor-pointer group ${
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon className={`size-4 shrink-0 transition-transform group-hover:scale-110 ${active ? "text-sidebar-primary" : "text-muted-foreground"}`} />
+                    <span className="truncate">{item.label}</span>
+                  </div>
+                  {item.badge && (
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-medium ${
+                        active
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* 底部用户信息与快捷操作 */}
+        <div className="p-3 border-t border-sidebar-border bg-sidebar/50 space-y-2">
+          <div className="flex items-center gap-1.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 justify-between h-9 px-2 hover:bg-sidebar-accent text-left font-normal"
+                    title={displayName}
+                  />
+                }
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    aria-hidden="true"
+                    className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary font-mono text-xs font-semibold text-primary-foreground shadow-xs"
+                  >
+                    {displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="flex flex-col min-w-0 text-left">
+                    <span className="truncate text-xs font-medium text-sidebar-foreground leading-tight">
+                      {displayName}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground leading-none mt-0.5">
+                      {authUser.role === "admin" ? "管理员" : "成员"}
+                    </span>
+                  </div>
+                </div>
+                <CaretUpDownIcon className="size-3.5 text-muted-foreground shrink-0 ml-1" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="w-52">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="space-y-0.5">
+                    <div className="truncate text-xs font-medium text-foreground">{displayName}</div>
+                    <div className="text-[10px] font-normal text-muted-foreground">
+                      {authUser.role === "admin" ? "系统管理员权限" : "团队成员权限"}
+                    </div>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowPasswordModal(true)}>
+                  <LockKeyIcon className="size-3.5 mr-1" />
+                  修改密码
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOutUser}>
+                  <SignOutIcon className="size-3.5 mr-1" />
+                  切换用户
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={handleSignOutAllDevices}>
+                  <SignOutIcon className="size-3.5 mr-1" />
+                  登出全部设备
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              size="icon-sm"
+              className="shrink-0 size-8"
+              title={`切换主题（当前: ${themeMeta.label}）`}
+              onClick={() => setTheme(themeMeta.next)}
+            >
+              {theme === "light" ? (
+                <SunIcon className="size-4" />
+              ) : theme === "dark" ? (
+                <MoonIcon className="size-4" />
+              ) : (
+                <DesktopIcon className="size-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </aside>
+
+      {/* 移动端顶部紧凑导航条 */}
+      <div className="flex md:hidden flex-col border-b border-sidebar-border bg-sidebar shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/60">
+          <div className="flex items-center gap-2">
+            <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
+              <BrandMark className="size-3.5" />
+            </span>
+            <span className="font-heading text-sm font-semibold tracking-tight">AgentsTower</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-7"
               title={themeMeta.title}
               onClick={() => setTheme(themeMeta.next)}
             >
               {theme === "light" ? (
-                <SunIcon />
+                <SunIcon className="size-3.5" />
               ) : theme === "dark" ? (
-                <MoonIcon />
+                <MoonIcon className="size-3.5" />
               ) : (
-                <DesktopIcon />
+                <DesktopIcon className="size-3.5" />
               )}
-              <span className="hidden sm:inline">{themeMeta.label}</span>
             </Button>
-
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button type="button" variant="outline" size="sm" title={displayName} />}
+                render={
+                  <Button type="button" variant="ghost" size="icon-sm" className="size-7" title={displayName} />
+                }
               >
                 <span
                   aria-hidden="true"
-                  className="flex size-4 items-center justify-center rounded bg-primary font-mono text-[10px] font-semibold text-primary-foreground"
+                  className="flex size-5 shrink-0 items-center justify-center rounded bg-primary font-mono text-[10px] font-semibold text-primary-foreground"
                 >
                   {displayName.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="max-w-[90px] truncate hidden sm:inline">{displayName}</span>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="space-y-0.5">
                     <div className="truncate text-xs font-medium text-foreground">{displayName}</div>
-                    <div className="text-[11px] font-normal text-muted-foreground">
+                    <div className="text-[10px] font-normal text-muted-foreground">
                       {authUser.role === "admin" ? "系统管理员" : "团队成员"}
                     </div>
                   </DropdownMenuLabel>
@@ -801,36 +922,36 @@ export default function App() {
             </DropdownMenu>
           </div>
         </div>
-
         <nav
           aria-label="移动端主导航"
-          className="flex md:hidden items-center gap-1 overflow-x-auto border-t px-3"
+          className="flex items-center gap-1 overflow-x-auto px-2 py-1.5"
         >
           {navItems.map((item) => {
             const active = activeTab === item.id;
+            const Icon = item.icon;
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => navigateToTab(item.id)}
-                className={`relative shrink-0 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
-                  active ? "text-foreground" : "text-muted-foreground"
+                className={`flex items-center gap-1.5 shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                  active ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold" : "text-muted-foreground"
                 }`}
               >
+                <Icon className="size-3.5 shrink-0" />
                 <span>{item.label}</span>
-                {active && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute inset-x-1.5 bottom-0 h-[2px] bg-foreground"
-                  />
+                {item.badge && (
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded-full bg-muted text-muted-foreground">
+                    {item.badge}
+                  </span>
                 )}
               </button>
             );
           })}
         </nav>
-      </header>
+      </div>
 
-      <main className="flex-1 min-h-0 flex flex-col">
+      <main className="flex-1 min-h-0 min-w-0 flex flex-col">
         {activeTab === "admin" && authUser.role === "admin" ? (
           <AdminPanel currentUser={authUser} />
         ) : activeTab === "mcp" ? (
