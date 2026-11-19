@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func testConfig(towerURL string) Config {
@@ -706,8 +708,8 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	if !refreshed {
 		t.Fatalf("expected expired Tower token to be auto-refreshed on MCP request")
 	}
-	if initRec.Header().Get("Mcp-Session-Id") == "" {
-		t.Fatalf("expected Mcp-Session-Id header")
+	if initRec.Header().Get("Mcp-Session-Id") != "" {
+		t.Fatalf("unexpected session ID from stateless transport")
 	}
 
 	// 3. Notification returns 202 Accepted
@@ -745,6 +747,27 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	if callCreateRec.Code != http.StatusOK || !strings.Contains(callCreateRec.Body.String(), `todo-new`) {
 		t.Fatalf("tools/call create_todo failed: %d %s", callCreateRec.Code, callCreateRec.Body.String())
 	}
+
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
+		mux.ServeHTTP(w, r)
+	}))
+	defer endpoint.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "integration-test", Version: "1"}, nil)
+	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: endpoint.URL + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	tools, err := session.ListTools(t.Context(), nil)
+	if err != nil || len(tools.Tools) == 0 {
+		t.Fatalf("SDK ListTools: %v, %v", tools, err)
+	}
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "list_todos", Arguments: map[string]any{"todolist_id": "tl-1", "page": 2, "completed_todo": true}})
+	if err != nil || result.IsError || len(result.Content) == 0 {
+		t.Fatalf("SDK CallTool: %v, %v", result, err)
+	}
+
 }
 
 func TestUserAuthQuickLoginRolesAndCLI(t *testing.T) {
