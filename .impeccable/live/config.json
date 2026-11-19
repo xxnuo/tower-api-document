@@ -1,0 +1,9 @@
+{
+  "files": [
+    "oauth-server/web/index.html",
+    "docs/index.html"
+  ],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}
