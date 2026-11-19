@@ -16,13 +16,13 @@ func TestSearchTodosFilterDedupeAndRateLimit(t *testing.T) {
 		switch path {
 		case "/api/v1/members/m1/assigned_todos":
 			return http.StatusOK, []byte(`{"data":[
-				{"id":"t1","attributes":{"content":"修复登录 Bug","desc":"OAuth 回调","completed":false}},
-				{"id":"t2","attributes":{"content":"发布版本","desc":"已完成","completed":true}}
+				{"id":"t1","relationships":{"assignee":{"data":{"id":"m1"}}},"attributes":{"content":"修复登录 Bug","desc":"OAuth 回调","completed":false}},
+				{"id":"t2","relationships":{"assignee":{"data":{"id":"m1"}}},"attributes":{"content":"发布版本","desc":"已完成","completed":true}}
 			]}`), nil
 		case "/api/v1/members/m1/created_todos":
 			return http.StatusOK, []byte(`{"data":[
-				{"id":"t1","attributes":{"content":"修复登录 Bug","desc":"OAuth 回调","completed":false}},
-				{"id":"t3","attributes":{"content":"补充 OAuth 测试","desc":"","completed":false}}
+				{"id":"t1","relationships":{"creator":{"data":{"id":"m1"}}},"attributes":{"content":"修复登录 Bug","desc":"OAuth 回调","completed":false}},
+				{"id":"t3","relationships":{"creator":{"data":{"id":"m1"}}},"attributes":{"content":"补充 OAuth 测试","desc":"","completed":false}}
 			]}`), nil
 		default:
 			return http.StatusNotFound, []byte(`{}`), nil
@@ -138,7 +138,7 @@ func TestAdvancedSearchIncompleteReasons(t *testing.T) {
 func TestAdvancedSearchKeepsMemberRowsBeyondRequestedPage(t *testing.T) {
 	rows := make([]map[string]any, 60)
 	for i := range rows {
-		rows[i] = map[string]any{"id": fmt.Sprint(i)}
+		rows[i] = map[string]any{"id": fmt.Sprint(i), "relationships": map[string]any{"assignee": map[string]any{"data": map[string]any{"id": "m1"}}, "creator": map[string]any{"data": map[string]any{"id": "m1"}}}}
 	}
 	rows[len(rows)-1]["attributes"] = map[string]any{"content": "late match"}
 	body, err := json.Marshal(map[string]any{"data": rows})
@@ -176,5 +176,25 @@ func TestAdvancedSearchReportsRequestBudget(t *testing.T) {
 	reason, _ := result["incomplete_reason"].(string)
 	if code != 200 || result["upstream_requests"] != searchMaxUpstreamBudget || !strings.Contains(reason, "上游请求预算") {
 		t.Fatalf("unexpected result: %d %v", code, result)
+	}
+}
+
+func TestSearchTodosRejectsWrongMemberEnvelope(t *testing.T) {
+	fetch := func(_ context.Context, path, _ string) (int, []byte, error) {
+		switch {
+		case strings.HasSuffix(path, "/assigned_todos"), strings.HasSuffix(path, "/created_todos"):
+			return http.StatusOK, []byte(`{"data":{"id":"caller","relationships":{"todos":{"data":[{"type":"todos","id":"wrong"}]}}},"included":[{"type":"todos","id":"wrong","attributes":{"content":"match","is_active":true,"is_completed":false},"relationships":{"assignee":{"data":{"id":"caller"}},"creator":{"data":{"id":"caller"}}}}]}`), nil
+		case strings.HasSuffix(path, "/assigned_uncompleted_todos"):
+			return http.StatusOK, []byte(`{"data":[{"id":"right","attributes":{"content":"match","is_active":true,"is_completed":false},"relationships":{"assignee":{"data":{"id":"target"}}}},{"id":"wrong","attributes":{"content":"match","is_active":true,"is_completed":false},"relationships":{"assignee":{"data":{"id":"caller"}}}}]}`), nil
+		default:
+			return http.StatusOK, []byte(`{"data":[]}`), nil
+		}
+	}
+	for _, status := range []string{"all", "uncompleted", "completed"} {
+		code, got := searchTodos(t.Context(), newSearchRateLimiter(3, time.Minute, 1), "caller", fetch, searchTodosParams{Keyword: "match", MemberID: "target", Status: status})
+		items := got["items"].([]map[string]any)
+		if code != http.StatusOK || got["truncated"] != true || (status == "completed" && len(items) != 0) || (status != "completed" && (len(items) != 1 || items[0]["id"] != "right")) {
+			t.Fatalf("%s returned wrongly scoped tasks: %v", status, got)
+		}
 	}
 }

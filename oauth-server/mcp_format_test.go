@@ -51,15 +51,17 @@ func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
 }
 
 func TestMemberTodoViews(t *testing.T) {
-	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"2026-11-20","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}}}}]}`)
-	for _, tc := range []struct{ tool, want, omit string }{
-		{"list_member_created_uncompleted_todos", "M1", "周一"},
-		{"list_member_assigned_uncompleted_todos", "2026-11-20", "M1"},
-		{"list_member_assigned_completed_todos", "2026-11-20", "M1"},
+	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"2026-11-20","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}},"creator":{"data":{"id":"M2","type":"members"}},"closer":{"data":{"id":"M3","type":"members"}}}}]}`)
+	for _, tc := range []struct {
+		tool, role string
+		completed  bool
+	}{
+		{"list_member_created_uncompleted_todos", "M2", false},
+		{"list_member_assigned_uncompleted_todos", "M1", false},
+		{"list_member_assigned_completed_todos", "M3", true},
 	} {
-		p := resultProfiles[tc.tool]
-		text := p.text(compactTowerBody(raw, tc.tool))
-		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.omit) {
+		text := resultProfiles[tc.tool].text(compactTowerBody(raw, tc.tool))
+		if !strings.Contains(text, tc.role) || !strings.Contains(text, "2026-11-20") || strings.Contains(text, "周一") != tc.completed {
 			t.Errorf("%s: %s", tc.tool, text)
 		}
 	}

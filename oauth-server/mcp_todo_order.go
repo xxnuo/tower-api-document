@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -49,8 +50,15 @@ func listTodosByCreation(ctx context.Context, cfg Config, key string, acc *Store
 func sortTodosByCreation(rows []map[string]any) error {
 	created := make(map[string]time.Time, len(rows))
 	for _, row := range rows {
-		id := row["id"].(string)
-		stamp, err := time.Parse(time.RFC3339Nano, stringifyArg(row["created_at"]))
+		id, _ := row["id"].(string)
+		if id == "" {
+			return fmt.Errorf("任务缺少 ID，无法按创建时间排序")
+		}
+		attrs, ok := row["attributes"].(map[string]any)
+		if !ok {
+			attrs = row
+		}
+		stamp, err := time.Parse(time.RFC3339Nano, stringifyArg(attrs["created_at"]))
 		if err != nil {
 			return fmt.Errorf("任务 %s 缺少有效的 created_at，无法保证按创建时间排序", id)
 		}
@@ -64,4 +72,21 @@ func sortTodosByCreation(rows []map[string]any) error {
 		return strings.Compare(left, right)
 	})
 	return nil
+}
+
+func sortMemberTodoBody(raw []byte) ([]byte, error) {
+	doc, items := decodeMCPList(raw)
+	if items == nil {
+		return nil, fmt.Errorf("Tower 返回的成员任务列表无效")
+	}
+	rows := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		row, _ := item.(map[string]any)
+		rows = append(rows, row)
+	}
+	if err := sortTodosByCreation(rows); err != nil {
+		return nil, err
+	}
+	doc["data"] = rows
+	return json.Marshal(doc)
 }

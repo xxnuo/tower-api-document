@@ -80,7 +80,7 @@ func executeRawRequest(ctx context.Context, cfg Config, key string, acc *StoredA
 	if args["fields"] != nil && len(output.fields) == 0 {
 		return fmt.Sprintf("%s %s 的 fields 至少需要一个非空字段名", method, path), true
 	}
-	return callTowerForMCP(ctx, cfg, key, acc, "raw_request", method, path, query, body, page, maxItems, false, &output)
+	return callTowerForMCP(ctx, cfg, key, acc, "raw_request", method, path, query, body, page, maxItems, false, false, &output)
 }
 
 func (o rawMCPOutput) text(body []byte) (string, bool) {

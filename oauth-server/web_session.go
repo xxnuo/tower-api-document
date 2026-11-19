@@ -289,6 +289,12 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 			if _, ok := val.(string); !ok {
 				return nil, fmt.Errorf("%s 须为字符串", key)
 			}
+			if key == "member_guid" && !guidPattern.MatchString(v) {
+				return nil, errors.New("member_guid 必须是 Tower 成员 GUID")
+			}
+			if key == "keyword" && v == "" {
+				continue
+			}
 		case "page", "category":
 			n, err := strconv.ParseInt(v, 10, 32)
 			if err != nil || (n < 1 && !(key == "category" && n == -1)) {
@@ -307,8 +313,8 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 		}
 		q.Set(key, v)
 	}
-	if strings.TrimSpace(q.Get("keyword")) == "" && q.Get("tag") == "" {
-		return nil, errors.New("keyword 或 tag 至少须填写一项")
+	if q.Get("keyword") == "" && q.Get("tag") == "" {
+		return nil, errors.New("须提供非空的 keyword 或 tag，member_guid 仅用于附加筛选")
 	}
 	return q, nil
 }
@@ -318,6 +324,10 @@ func (client *webClient) searchTodos(ctx context.Context, query url.Values) (map
 	if err != nil {
 		return nil, err
 	}
+	return client.searchTeamTodos(ctx, query, teams)
+}
+
+func (client *webClient) searchTeamTodos(ctx context.Context, query url.Values, teams []string) (map[string]any, error) {
 	page, _ := strconv.Atoi(query.Get("page"))
 	items := []any{}
 	more := false
@@ -580,7 +590,55 @@ func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, query url
 		return nil, err
 	}
 	defer client.save()
+	if member := query.Get("member_guid"); member != "" {
+		team, err := searchMemberTeam(ctx, cfg, acc, member)
+		if err != nil {
+			return nil, err
+		}
+		return client.searchTeamTodos(ctx, query, []string{team})
+	}
 	return client.searchTodos(ctx, query)
+}
+
+func searchMemberTeam(ctx context.Context, cfg Config, acc *StoredAccount, member string) (string, error) {
+	if !guidPattern.MatchString(member) {
+		return "", errors.New("member_guid 必须是 Tower 成员 GUID")
+	}
+	status, body, err := doTowerHTTPWithRefresh(ctx, cfg, acc.MCPAPIKey, acc, http.MethodGet, "/api/v1/members/"+member, "", nil)
+	if err != nil {
+		return "", err
+	}
+	switch status {
+	case http.StatusNotFound:
+		return "", errors.New("找不到 member_guid 对应的成员，或当前账号没有读取权限")
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "", errors.New("当前账号没有读取 member_guid 对应成员的权限")
+	case http.StatusOK:
+	default:
+		return "", fmt.Errorf("读取 member_guid 对应的成员失败 HTTP %d", status)
+	}
+	var doc struct {
+		Data struct {
+			ID            string `json:"id"`
+			Type          string `json:"type"`
+			Relationships struct {
+				Team struct {
+					Data struct {
+						ID   string `json:"id"`
+						Type string `json:"type"`
+					} `json:"data"`
+				} `json:"team"`
+			} `json:"relationships"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil || doc.Data.ID != member || doc.Data.Type != "members" {
+		return "", errors.New("Tower 未返回 member_guid 对应的成员")
+	}
+	team := doc.Data.Relationships.Team.Data
+	if team.Type != "teams" || !guidPattern.MatchString(team.ID) {
+		return "", errors.New("无法确认 member_guid 对应成员的所属团队")
+	}
+	return team.ID, nil
 }
 
 func webToolText(tool string, payload map[string]any, err error) (string, bool) {

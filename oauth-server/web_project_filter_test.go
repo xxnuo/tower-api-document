@@ -201,7 +201,11 @@ func TestProjectTodoFilterPagesCountMatches(t *testing.T) {
 		case "/api/v1/todolists/l1/todos":
 			rows := make([]map[string]any, 0, firstMatch+2)
 			for i := 0; i < firstMatch+2; i++ {
-				rows = append(rows, map[string]any{"id": fmt.Sprintf("task-%d", i), "attributes": map[string]any{"content": "任务", "is_completed": i == 0, "due_at": nil}})
+				rows = append(rows, map[string]any{
+					"id":            fmt.Sprintf("task-%d", i),
+					"attributes":    map[string]any{"content": "任务", "is_completed": i == 0, "due_at": nil},
+					"relationships": map[string]any{"closer": map[string]any{"data": nil}},
+				})
 			}
 			json.NewEncoder(w).Encode(map[string]any{"data": rows, "links": map[string]any{"next": nil}})
 		default:
@@ -220,6 +224,7 @@ func TestProjectTodoFilterPagesCountMatches(t *testing.T) {
 		map[string]any{"field": "custom.platform", "operator": "in", "value": "Web"},
 		map[string]any{"field": "start_at", "operator": "eq", "value": "2026-11-19"},
 		map[string]any{"field": "due_at", "operator": "be_nil"},
+		map[string]any{"field": "closer_id", "operator": "be_nil"},
 	}}
 	first, err := filterProjectTodos(t.Context(), cfg, account, args)
 	if err != nil || first["has_more"] != true || first["returned"] != 1 || first["items"].([]any)[0].(map[string]any)["id"] != fmt.Sprintf("task-%d", firstMatch) {
@@ -242,5 +247,43 @@ func TestProjectTodoFilterPagesCountMatches(t *testing.T) {
 	item := last["items"].([]any)[0].(map[string]any)
 	if item["id"] != fmt.Sprintf("task-%d", firstMatch+1) || item["todolist_id"] != "l1" {
 		t.Fatal(item)
+	}
+}
+
+func TestProjectTodoFilterMemberRelationships(t *testing.T) {
+	for _, tc := range []struct {
+		field, op string
+		value     any
+		list      map[string]any
+		detail    map[string]any
+		want      bool
+		wantErr   bool
+	}{
+		{field: "assignee_id", op: "eq", value: "m1", list: map[string]any{"assignee": map[string]any{"id": "m1", "nickname": "高畅"}}, want: true},
+		{field: "creator_id", op: "eq", value: "m1", list: map[string]any{"creator": "m2"}},
+		{field: "closer_id", op: "in", value: []any{"m1", "m2"}, list: map[string]any{"closer": "m2"}, want: true},
+		{field: "closer_id", op: "eq", value: []any{"m1", "m2"}, wantErr: true},
+		{field: "closer_id", op: "eq", value: "m1", detail: map[string]any{"closer": "m1"}, want: true},
+		{field: "closer_id", op: "be_nil", list: map[string]any{"closer": nil}, want: true},
+		{field: "closer_id", op: "be_nil", detail: map[string]any{"closer": nil}, want: true},
+		{field: "closer_id", op: "be_nil", detail: map[string]any{"closer": map[string]any{"nickname": "未知"}}, wantErr: true},
+		{field: "closer_id", op: "not_in", value: "m1", detail: map[string]any{}, wantErr: true},
+	} {
+		t.Run(tc.field+"/"+tc.op, func(t *testing.T) {
+			filter, err := newProjectTodoFilter(map[string]any{"conditions": []any{
+				map[string]any{"field": tc.field, "operator": tc.op, "value": tc.value},
+			}})
+			match := false
+			if err == nil {
+				var detail func() (map[string]any, error)
+				if tc.detail != nil {
+					detail = func() (map[string]any, error) { return tc.detail, nil }
+				}
+				match, err = filter.matches(tc.list, detail)
+			}
+			if match != tc.want || (err != nil) != tc.wantErr {
+				t.Fatalf("match = %v, err = %v, want match = %v, want error = %v", match, err, tc.want, tc.wantErr)
+			}
+		})
 	}
 }

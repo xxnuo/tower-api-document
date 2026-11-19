@@ -50,7 +50,7 @@ var projectTaskTools = []mcpToolSpec{
 		Method: "POST", PathTemplate: "/api/v1/projects/{project_id}/filter_todos",
 		Params: []mcpParam{
 			pPath("project_id", "项目 GUID"),
-			pBody("conditions", "conditions", true, "1–20 项。field 支持 title、label、priority、todolist_id、assignee_id、creator_id、closer_id、start_at、due_at、closed_at、created_at、custom.<字段 key>。operator 按字段可选 in、not_in、all_in、eq、lt、gt、be_nil、not_be_nil。日期用北京时间 YYYY-MM-DD，lt 和 gt 不含当天。"),
+			pBody("conditions", "conditions", true, "1–20 项，每项传 field、operator、value。成员字段 assignee_id（负责人）、creator_id（创建人）、closer_id（完成人）支持 eq（单个 member_id）、in、not_in（单个或数组）。成员 ID 可从 list_team_members 获取。assignee_id、closer_id 还支持 be_nil、not_be_nil。title 用 in；priority 用 in、not_in、be_nil、not_be_nil；todolist_id 用 in、not_in；label 和 custom.<字段 key> 用 in、not_in、all_in、eq、be_nil、not_be_nil。start_at、due_at、closed_at、created_at 用北京时间 YYYY-MM-DD，支持 eq、lt、gt、be_nil，created_at 还支持 not_be_nil。lt 和 gt 不含当天，判空操作省略 value。"),
 			pBody("match", "string", false, "all（全部满足）或 any（任一满足）"),
 			pBody("status", "string", false, "all、completed 或 uncompleted"),
 			pBody("order", "string", false, "可选 -created_at，按整个项目的创建时间倒序。默认按清单顺序。"),

@@ -168,6 +168,7 @@ func (state *upstreamProjectPage) fetch(ctx context.Context, cfg Config, key str
 			item := compactResource(row, false, included)
 			if state.includeFilterFields {
 				// Keep the original field values during condition evaluation.
+				keepNullProjectTodoMembers(item, row)
 				attrs, _ := row["attributes"].(map[string]any)
 				if due, ok := attrs["due_at"]; ok {
 					item["due_at"] = due

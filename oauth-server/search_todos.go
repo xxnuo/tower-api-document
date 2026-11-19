@@ -186,7 +186,12 @@ func searchTodos(
 			return nil
 		}
 		if mcpListHasOmittedRows(doc, len(rows)) {
-			warn(label + "：Tower 只返回了部分记录")
+			meta, _ := doc["meta"].(map[string]any)
+			reason := stringifyArg(meta["incomplete_reason"])
+			if reason == "" {
+				reason = "Tower 只返回了部分记录"
+			}
+			warn(label + "：" + reason)
 		}
 		if capRows > 0 && len(rows) > capRows {
 			warn(fmt.Sprintf("%s扫描上限为 %d 条，额外记录未扫描", label, capRows))
@@ -227,19 +232,15 @@ func searchTodos(
 	}
 
 	fetchMemberTodos := func(memberID string) {
-		endpoints := memberTodoEndpoints(status)
-		q := fmt.Sprintf("page[number]=1&page[size]=%d", maxListPageSize)
-		for _, ep := range endpoints {
+		for _, ep := range []string{"assigned_todos", "created_todos"} {
 			path := "/api/v1/members/" + url.PathEscape(memberID) + "/" + ep
-			code, body, err := budgetFetch(path, q)
-			if err != nil || code < 200 || code >= 300 {
+			code, body, err := fetchScopedMemberTodos(budgetFetch, path, status)
+			if err != nil {
+				warn("成员任务：" + err.Error())
 				continue
 			}
-			if status == "uncompleted" {
-				warn("Tower 成员专用待办接口可能省略任务")
-			}
-			if status == "all" {
-				body, _ = unwrapMemberTodoList(body)
+			if code < 200 || code >= 300 {
+				continue
 			}
 			collectItems(scanRows(body, "成员任务", 0))
 		}
@@ -345,17 +346,6 @@ func searchTodos(
 		result["incomplete_reason"] = strings.Join(warnings, "。")
 	}
 	return http.StatusOK, result
-}
-
-func memberTodoEndpoints(status string) []string {
-	switch status {
-	case "uncompleted":
-		return []string{"assigned_uncompleted_todos", "created_uncompleted_todos"}
-	case "completed":
-		return []string{"assigned_completed_todos", "created_completed_todos"}
-	default:
-		return []string{"assigned_todos", "created_todos"}
-	}
 }
 
 func todoMatchesStatus(item map[string]any, status string) bool {

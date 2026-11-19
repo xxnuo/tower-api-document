@@ -96,13 +96,13 @@ func TestMCPOverviewCountAndErrors(t *testing.T) {
 			fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
 		case path == "/api/v1/members/1/assigned_todos":
 			fmt.Fprint(w, `{
-				"data":{"relationships":{"todos":{"data":[{"type":"todos","id":"1"},{"type":"todos","id":"2"},{"type":"todos","id":"3"},{"type":"todos","id":"4"},{"type":"todos","id":"5"}]}}},
+				"data":{"id":"1","relationships":{"todos":{"data":[{"type":"todos","id":"1"},{"type":"todos","id":"2"},{"type":"todos","id":"3"},{"type":"todos","id":"4"},{"type":"todos","id":"5"}]}}},
 				"included":[
-					{"type":"todos","id":"1","attributes":{"content":"first","is_active":true,"is_completed":false}},
-					{"type":"todos","id":"2","attributes":{"is_active":true,"is_completed":false}},
-					{"type":"todos","id":"3","attributes":{"is_active":true,"is_completed":false}},
-					{"type":"todos","id":"4","attributes":{"is_active":true,"is_completed":true}},
-					{"type":"todos","id":"5","attributes":{"is_active":false,"is_completed":false}}
+					{"type":"todos","id":"1","relationships":{"assignee":{"data":{"id":"1"}}},"attributes":{"content":"first","is_active":true,"is_completed":false}},
+					{"type":"todos","id":"2","relationships":{"assignee":{"data":{"id":"1"}}},"attributes":{"is_active":true,"is_completed":false}},
+					{"type":"todos","id":"3","relationships":{"assignee":{"data":{"id":"1"}}},"attributes":{"is_active":true,"is_completed":false}},
+					{"type":"todos","id":"4","relationships":{"assignee":{"data":{"id":"1"}}},"attributes":{"is_active":true,"is_completed":true}},
+					{"type":"todos","id":"5","relationships":{"assignee":{"data":{"id":"1"}}},"attributes":{"is_active":false,"is_completed":false}}
 				]
 			}`)
 		case strings.HasSuffix(path, "/assigned_todos"):
@@ -110,13 +110,13 @@ func TestMCPOverviewCountAndErrors(t *testing.T) {
 		case path == "/api/v1/members/2/assigned_uncompleted_todos":
 			todos := make([]map[string]any, 200)
 			for i := range todos {
-				todos[i] = map[string]any{"id": fmt.Sprint(i + 1)}
+				todos[i] = map[string]any{"id": fmt.Sprint(i + 1), "relationships": map[string]any{"assignee": map[string]any{"data": map[string]any{"id": "2"}}}}
 			}
 			json.NewEncoder(w).Encode(map[string]any{"data": todos})
 		case path == "/api/v1/members/3/assigned_uncompleted_todos":
 			http.Error(w, "forbidden", http.StatusForbidden)
 		case path == "/api/v1/members/4/assigned_uncompleted_todos":
-			fmt.Fprint(w, `{"data":[{"id":"4"}]}`)
+			fmt.Fprint(w, `{"data":[{"id":"4","relationships":{"assignee":{"data":{"id":"4"}}}}]}`)
 		default:
 			fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -158,5 +158,36 @@ func TestMCPOverviewCountAndErrors(t *testing.T) {
 	got, failed = executeMCPTool(t.Context(), cfg, "", &StoredAccount{}, index, "list_member_assigned_todos", args)
 	if failed || !strings.Contains(got, "ID 4") || !strings.Contains(got, "total：5") || !strings.Contains(got, "next_page：3") {
 		t.Fatalf("member's complete list page: %v, %s", failed, got)
+	}
+}
+
+func TestMemberTodoFallbackFollowsLinksAndKeepsRelatedResources(t *testing.T) {
+	path := "/api/v1/members/target/assigned_todos"
+	fetch := func(path, query string) (int, []byte, error) {
+		switch {
+		case strings.HasSuffix(path, "/assigned_todos"):
+			return 200, []byte(`{"data":{"id":"caller","relationships":{"todos":{"data":[]}}}}`), nil
+		case strings.HasSuffix(path, "/assigned_uncompleted_todos"):
+			return 200, []byte(`{"data":[{"id":"active","relationships":{"assignee":{"data":{"type":"members","id":"target"}}}}],"included":[{"id":"target","type":"members","attributes":{"nickname":"Target"}}]}`), nil
+		case query == "":
+			return 200, []byte(`{"data":[],"links":{"next":"?page%5Bnumber%5D=3"}}`), nil
+		case query == "page%5Bnumber%5D=3":
+			return 200, []byte(`{"data":[{"id":"done","relationships":{"assignee":{"data":{"type":"members","id":"target"}},"project":{"data":{"type":"projects","id":"p"}}}},{"id":"other","relationships":{"assignee":{"data":{"type":"members","id":"caller"}}}}],"links":{"next":"?page%5Bnumber%5D=5"},"included":[{"id":"p","type":"projects","attributes":{"name":"Target project"}},{"id":"target","type":"members","attributes":{"nickname":"Target"}},{"id":"caller","type":"members","attributes":{"nickname":"Caller"}}]}`), nil
+		case query == "page%5Bnumber%5D=5":
+			return 200, []byte(`{"data":[{"id":"done","relationships":{"assignee":{"data":{"type":"members","id":"target"}}}}],"links":{"next":null}}`), nil
+		default:
+			t.Fatalf("unexpected query %q", query)
+			return 0, nil, nil
+		}
+	}
+	code, body, err := fetchScopedMemberTodos(fetch, path, "all")
+	doc, rows := decodeMCPList(body)
+	meta, _ := doc["meta"].(map[string]any)
+	included, _ := doc["included"].([]any)
+	if err != nil || code != http.StatusOK || len(rows) != 2 || len(included) != 2 || meta["scope_complete"] != false || meta["total"] != nil {
+		t.Fatalf("invalid fallback: %d %v %s", code, err, body)
+	}
+	if strings.Contains(string(body), "caller") || strings.Contains(string(body), "other") {
+		t.Fatalf("returned a different member's task: %s", body)
 	}
 }

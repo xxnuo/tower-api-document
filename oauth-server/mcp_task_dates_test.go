@@ -34,7 +34,7 @@ func TestAssignedTodoDueFilterUsesFullSource(t *testing.T) {
 		if i >= 185 {
 			due = "2026-11-18T23:30:00+08:00"
 		}
-		rows = append(rows, map[string]any{"id": fmt.Sprintf("T%d", i), "type": "todos", "attributes": map[string]any{"content": "task", "due_at": due, "is_active": true, "is_completed": false}})
+		rows = append(rows, map[string]any{"id": fmt.Sprintf("T%d", i), "type": "todos", "relationships": map[string]any{"assignee": map[string]any{"data": map[string]any{"id": "m"}}}, "attributes": map[string]any{"content": "task", "due_at": due, "is_active": true, "is_completed": false}})
 	}
 	fallback := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

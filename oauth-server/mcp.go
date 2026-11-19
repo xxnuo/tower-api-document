@@ -192,9 +192,11 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "list_member_assigned_todos", Title: "获取指派给成员的全部任务",
-		Desc:   "获取指派给指定成员的全部任务（含已完成和未完成）",
+		Desc:   "按 assignee 核验指派给该成员的任务，包含已完成和未完成。scope_complete 为否时，verified_count 是已核验条数，完整总数未知。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize()},
+		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize(),
+			{Name: "order", Type: "string", Desc: "传 -created_at 时，先按任务创建时间倒序，再分页。"},
+		},
 	},
 	{
 		Name: "list_member_assigned_uncompleted_todos", Title: "获取指派给成员的未完成任务",
@@ -208,16 +210,18 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "list_member_assigned_completed_todos", Title: "获取指派给成员的已完成任务",
-		Desc:   "获取指派给指定成员且已完成的任务列表",
+		Name: "list_member_assigned_completed_todos", Title: "获取成员完成的任务",
+		Desc:   "获取 Tower 成员已完成列表。用 closer 确认完成人，assignee 表示当前负责人，两者可能不同。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_completed_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
 		Name: "list_member_created_todos", Title: "获取成员创建的全部任务",
-		Desc:   "获取由指定成员创建的全部任务",
+		Desc:   "按 creator 核验由该成员创建的任务。scope_complete 为否时，verified_count 是已核验条数，完整总数未知。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize()},
+		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize(),
+			{Name: "order", Type: "string", Desc: "传 -created_at 时，先按任务创建时间倒序，再分页。"},
+		},
 	},
 	{
 		Name: "list_member_created_uncompleted_todos", Title: "获取成员创建的未完成任务",
@@ -689,20 +693,23 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页按关键词或标签搜索。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
+			"description": "使用 Tower 网页搜索，须提供非空的 keyword 或 tag。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"page":          map[string]any{"type": "integer", "minimum": 1, "description": "页码，默认 1。保留其他参数，按 next_page 继续。每团队每页 20 条。"},
 					"category":      map[string]any{"type": "integer", "description": "Tower 网页内容类型，默认 2 任务。-1 全部、1 清单、4 文件或附件、7 评论、15 项目、18 知识库文档。"},
 					"target_gid":    map[string]any{"type": "string", "description": "网页项目或知识库 GID，如 gid://tower2/Project/123。省略时搜索所有项目。"},
-					"member_guid":   map[string]any{"type": "string", "description": "网页成员筛选器中的成员 GUID。"},
+					"member_guid":   map[string]any{"type": "string", "pattern": "^[a-f0-9]{32}$", "description": "用于附加筛选的网页成员 GUID（即 Tower API 成员 ID）。须同时提供非空的 keyword 或 tag，仅搜索该成员所属团队。"},
 					"sort":          map[string]any{"type": "integer", "enum": []int{1, 2}, "description": "1 时间顺序（默认），2 相关度。"},
 					"exclude_trash": map[string]any{"type": "boolean", "default": true, "description": "隐藏回收站内容。"},
-					"keyword":       map[string]any{"type": "string", "description": "搜索关键词；与 tag 至少提供一项"},
-					"tag":           map[string]any{"type": "string", "description": "标签名称，可带 #"},
+					"keyword":       map[string]any{"type": "string", "description": "搜索关键词。提供非空 tag 时，空白关键词会被忽略。"},
+					"tag":           map[string]any{"type": "string", "pattern": `^\s*(?:#\s*\S|[^#\s])`, "description": "非空标签名称，可带 #。"},
 				},
-				"anyOf": []map[string]any{{"required": []string{"keyword"}}, {"required": []string{"tag"}}},
+				"anyOf": []map[string]any{
+					{"required": []string{"keyword"}, "properties": map[string]any{"keyword": map[string]any{"pattern": `\S`}}},
+					{"required": []string{"tag"}},
+				},
 			},
 			"annotations": map[string]any{
 				"title":           "搜索任务",
@@ -1143,10 +1150,11 @@ func executeMCPTool(
 		}
 	}
 
-	if name == "list_todos" && args["order"] != nil {
-		if stringifyArg(args["order"]) != "-created_at" {
-			return "list_todos 仅支持 order=-created_at", true
-		}
+	sortByCreation := args["order"] != nil && (name == "list_todos" || name == "list_member_created_todos" || name == "list_member_assigned_todos")
+	if sortByCreation && args["order"] != "-created_at" {
+		return name + " 仅支持 order=-created_at", true
+	}
+	if name == "list_todos" && sortByCreation {
 		if maxItems == 0 {
 			maxItems = defaultListPageSize
 		}
@@ -1205,7 +1213,7 @@ func executeMCPTool(
 		bodyBytes = encoded
 	}
 
-	return callTowerForMCP(ctx, cfg, mcpKey, acc, name, spec.Method, resolvedPath, queryVals.Encode(), bodyBytes, pageNum, maxItems, localSlice, nil)
+	return callTowerForMCP(ctx, cfg, mcpKey, acc, name, spec.Method, resolvedPath, queryVals.Encode(), bodyBytes, pageNum, maxItems, localSlice, sortByCreation, nil)
 }
 
 func parsePositivePage(raw string) int {
@@ -1389,7 +1397,7 @@ func callTowerForMCP(
 	tool, method, apiPath, rawQuery string,
 	bodyBytes []byte,
 	page, maxItems int,
-	localSlice bool,
+	localSlice, sortByCreation bool,
 	rawOutput *rawMCPOutput,
 ) (string, bool) {
 	if teamWriteDenied(ctx, cfg, acc.AccessToken, method, apiPath) {
@@ -1404,6 +1412,8 @@ func callTowerForMCP(
 	var respBytes []byte
 	var err error
 	switch tool {
+	case "list_member_assigned_todos", "list_member_created_todos":
+		statusCode, respBytes, err = loadMemberTodos(ctx, cfg, mcpKey, acc, apiPath)
 	case "list_member_assigned_uncompleted_todos", "list_member_created_uncompleted_todos":
 		statusCode, respBytes, err = loadMemberUncompletedTodos(ctx, cfg, mcpKey, acc, apiPath)
 	default:
@@ -1420,10 +1430,10 @@ func callTowerForMCP(
 			cursorQuery, _ := url.ParseQuery(rawQuery)
 			respBytes = paginateMCPList(respBytes, page, maxItems, false, cursorQuery)
 		default:
-			if tool == "list_member_assigned_todos" || tool == "list_member_created_todos" {
-				respBytes, _ = unwrapMemberTodoList(respBytes)
-				if _, rows := decodeMCPList(respBytes); rows == nil {
-					return "Tower 返回的成员任务关系格式无效或超出响应大小限制", true
+			if sortByCreation {
+				respBytes, err = sortMemberTodoBody(respBytes)
+				if err != nil {
+					return err.Error(), true
 				}
 			}
 			respBytes = paginateMCPList(respBytes, page, maxItems, localSlice, nil)

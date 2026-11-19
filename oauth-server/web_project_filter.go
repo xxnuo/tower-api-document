@@ -53,9 +53,9 @@ type projectTodoFilter struct {
 
 var projectTodoFilterOperators = map[string]string{
 	"title":       "in",
-	"assignee_id": "in not_in be_nil not_be_nil",
-	"creator_id":  "in not_in",
-	"closer_id":   "in not_in be_nil not_be_nil",
+	"assignee_id": "eq in not_in be_nil not_be_nil",
+	"creator_id":  "eq in not_in",
+	"closer_id":   "eq in not_in be_nil not_be_nil",
 	"todolist_id": "in not_in",
 	"priority":    "in not_in be_nil not_be_nil",
 	"label":       "in all_in not_in eq be_nil not_be_nil",
@@ -92,8 +92,11 @@ func newProjectTodoFilter(args map[string]any) (*projectTodoFilter, error) {
 		if strings.HasPrefix(field, "custom.") && len(field) > len("custom.") {
 			allowed = []string{"in", "not_in", "all_in", "eq", "be_nil", "not_be_nil"}
 		}
+		if len(allowed) == 0 {
+			return nil, fmt.Errorf("%w：第 %d 项不支持 field %q", errWebArguments, i+1, field)
+		}
 		if !slices.Contains(allowed, op) {
-			return nil, fmt.Errorf("%w：第 %d 项 field 或 operator 无效", errWebArguments, i+1)
+			return nil, fmt.Errorf("%w：第 %d 项 field %s 的 operator 可选 %s", errWebArguments, i+1, field, strings.Join(allowed, "、"))
 		}
 		values, err := projectTodoConditionValues(item["value"], field, op)
 		if err != nil {
@@ -127,6 +130,9 @@ func projectTodoConditionValues(raw any, field, op string) ([]string, error) {
 	if len(values) == 0 {
 		return nil, fmt.Errorf("缺少 value")
 	}
+	if projectTodoMemberRelation(field) != "" && op == "eq" && len(values) != 1 {
+		return nil, fmt.Errorf("operator eq 须指定一个 member_id")
+	}
 	for i, v := range values {
 		v = strings.TrimSpace(v)
 		if field == "label" {
@@ -146,6 +152,39 @@ func projectTodoConditionValues(raw any, field, op string) ([]string, error) {
 	return slices.Compact(values), nil
 }
 
+func projectTodoMemberRelation(field string) string {
+	switch field {
+	case "assignee_id", "creator_id", "closer_id":
+		return strings.TrimSuffix(field, "_id")
+	}
+	return ""
+}
+
+func projectTodoMemberValue(item map[string]any, relation string) (any, bool) {
+	value, exists := item[relation]
+	switch v := value.(type) {
+	case nil:
+		return nil, exists
+	case string:
+		return v, v != ""
+	case map[string]any:
+		id, _ := v["id"].(string)
+		return id, id != ""
+	}
+	return nil, false
+}
+
+// The compact response omits null relationships. Filtering distinguishes null from missing data.
+func keepNullProjectTodoMembers(item, row map[string]any) {
+	rels, _ := row["relationships"].(map[string]any)
+	for _, name := range []string{"assignee", "creator", "closer"} {
+		rel, _ := rels[name].(map[string]any)
+		if value, exists := rel["data"]; exists && value == nil {
+			item[name] = nil
+		}
+	}
+}
+
 func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map[string]any, error)) (bool, error) {
 	if filter.Status != "all" {
 		completed, ok := item["is_completed"].(bool)
@@ -159,11 +198,14 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 	all := filter.Match == "all"
 	_, hasCreationDate := item["created_at"]
 	var payload map[string]any
+	var missingMember string
 	// Evaluate list fields before reading a task detail, which may include many related resources.
 	for _, needDetail := range []bool{false, true} {
 		for _, condition := range filter.Conditions {
 			key := condition.Field
-			if (key == "start_at" || key == "created_at" && !hasCreationDate || strings.HasPrefix(key, "custom.")) != needDetail {
+			relation := projectTodoMemberRelation(key)
+			memberValue, hasMember := projectTodoMemberValue(item, relation)
+			if (key == "start_at" || key == "created_at" && !hasCreationDate || strings.HasPrefix(key, "custom.") || relation != "" && !hasMember) != needDetail {
 				continue
 			}
 			value := item[key]
@@ -173,7 +215,7 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 			case "label":
 				value = item["labels"]
 			case "assignee_id", "creator_id", "closer_id":
-				value = item[strings.TrimSuffix(key, "_id")]
+				value = memberValue
 			}
 			if needDetail {
 				if detail == nil {
@@ -187,6 +229,12 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 					}
 				}
 				switch key {
+				case "assignee_id", "creator_id", "closer_id":
+					value, hasMember = projectTodoMemberValue(payload, relation)
+					if !hasMember {
+						missingMember = key
+						continue
+					}
 				case "start_at", "created_at":
 					value = payload[key]
 					if key == "created_at" {
@@ -202,6 +250,9 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 				return !all, nil
 			}
 		}
+	}
+	if missingMember != "" {
+		return false, fmt.Errorf("任务 %v 的 Tower API 响应缺少有效的 %s 成员关系", item["id"], missingMember)
 	}
 	return all, nil
 }
@@ -296,6 +347,7 @@ func fetchProjectTodoDetail(ctx context.Context, cfg Config, key string, acc *St
 		return nil, fmt.Errorf("无法读取任务 %s 的详情", id)
 	}
 	item := compactResource(doc.Data, false, nil)
+	keepNullProjectTodoMembers(item, doc.Data)
 	if customID, _ := item["custom_field_value"].(string); customID != "" {
 		for _, included := range doc.Included {
 			if included["type"] == "todos_custom_field_values" && included["id"] == customID {

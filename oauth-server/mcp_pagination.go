@@ -179,7 +179,7 @@ func mcpListTotal(meta map[string]any) (int, bool) {
 }
 
 // The two member-wide todo endpoints return a member resource and todo linkage.
-func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
+func unwrapMemberTodoList(raw []byte, memberID string) ([]byte, bool) {
 	doc, existing := decodeMCPList(raw)
 	if existing != nil {
 		if !mcpListHasOmittedRows(doc, len(existing)) {
@@ -196,11 +196,14 @@ func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
 		return out, false
 	}
 	member, _ := doc["data"].(map[string]any)
+	if stringifyArg(member["id"]) != memberID {
+		return nil, false
+	}
 	rels, _ := member["relationships"].(map[string]any)
 	todos, _ := rels["todos"].(map[string]any)
 	refs, ok := todos["data"].([]any)
 	if !ok {
-		return raw, false
+		return nil, false
 	}
 	type resourceKey struct{ typ, id string }
 	included, _ := doc["included"].([]any)
@@ -236,53 +239,176 @@ func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
 	return out, complete
 }
 
-// loadMemberUncompletedTodos uses the complete member relationship when it is
-// accessible. The dedicated endpoint can omit tasks even below its 200-row cap.
+func loadMemberTodos(ctx context.Context, cfg Config, mcpKey string, acc *StoredAccount, path string) (int, []byte, error) {
+	return loadScopedMemberTodos(ctx, cfg, mcpKey, acc, path, "all")
+}
+
 func loadMemberUncompletedTodos(ctx context.Context, cfg Config, mcpKey string, acc *StoredAccount, path string) (int, []byte, error) {
-	allPath := strings.TrimSuffix(path, "_uncompleted_todos") + "_todos"
-	code, raw, err := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, allPath, "", nil)
-	if err == nil && code >= 200 && code < 300 {
-		unwrapped, complete := unwrapMemberTodoList(raw)
-		doc, rows := decodeMCPList(unwrapped)
-		if complete && rows != nil {
-			items := make([]any, 0, len(rows))
-			for _, row := range rows {
-				item, _ := row.(map[string]any)
-				attrs, _ := item["attributes"].(map[string]any)
-				active, hasActive := attrs["is_active"].(bool)
-				completed, hasCompleted := attrs["is_completed"].(bool)
-				if !hasActive || !hasCompleted {
-					complete = false
-					break
-				}
-				if active && !completed {
-					items = append(items, item)
+	path = strings.TrimSuffix(path, "_uncompleted_todos") + "_todos"
+	return loadScopedMemberTodos(ctx, cfg, mcpKey, acc, path, "uncompleted")
+}
+
+func loadScopedMemberTodos(ctx context.Context, cfg Config, mcpKey string, acc *StoredAccount, path, status string) (int, []byte, error) {
+	fetch := func(path, query string) (int, []byte, error) {
+		return doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, path, query, nil)
+	}
+	return fetchScopedMemberTodos(fetch, path, status)
+}
+
+func scopedMemberTodoRows(rows []any, memberID, relation, status string) ([]any, bool) {
+	items := make([]any, 0, len(rows))
+	complete := true
+	for _, row := range rows {
+		item, _ := row.(map[string]any)
+		rels, _ := item["relationships"].(map[string]any)
+		link, _ := rels[relation].(map[string]any)
+		member, _ := link["data"].(map[string]any)
+		if stringifyArg(member["id"]) != memberID || stringifyArg(item["id"]) == "" {
+			complete = false
+			continue
+		}
+		if status != "all" {
+			attrs, _ := item["attributes"].(map[string]any)
+			completed, hasCompleted := attrs["is_completed"].(bool)
+			if !hasCompleted {
+				completed, hasCompleted = attrs["completed"].(bool)
+			}
+			active, hasActive := attrs["is_active"].(bool)
+			if !hasCompleted || status == "uncompleted" && !completed && !hasActive {
+				complete = false
+				continue
+			}
+			if status == "completed" && !completed || status == "uncompleted" && (completed || !active) {
+				continue
+			}
+		}
+		items = append(items, row)
+	}
+	return items, complete
+}
+
+func fetchScopedMemberTodos(fetch func(path, query string) (int, []byte, error), path, status string) (int, []byte, error) {
+	prefix, endpoint, _ := strings.Cut(strings.TrimPrefix(path, "/api/v1/members/"), "/")
+	memberID, err := url.PathUnescape(prefix)
+	if err != nil || memberID == "" {
+		return http.StatusBadRequest, nil, fmt.Errorf("成员 ID 无效")
+	}
+	relation := "assignee"
+	if endpoint == "created_todos" {
+		relation = "creator"
+	}
+	included := make(map[[2]string]map[string]any)
+	rememberIncluded := func(doc map[string]any) {
+		resources, _ := doc["included"].([]any)
+		for _, value := range resources {
+			row, _ := value.(map[string]any)
+			typ, id := stringifyArg(row["type"]), stringifyArg(row["id"])
+			if typ != "" && typ != "todos" && id != "" {
+				included[[2]string{typ, id}] = row
+			}
+		}
+	}
+	makeBody := func(items []any, reason string) []byte {
+		meta := map[string]any{"scope_complete": reason == ""}
+		if reason == "" {
+			meta["total"] = len(items)
+		} else {
+			meta["verified_count"] = len(items)
+			meta["scope_warning"] = reason
+			meta["incomplete_reason"] = reason
+		}
+		related := make([]any, 0, len(included))
+		addRelated := func(value any) {
+			ref, _ := value.(map[string]any)
+			key := [2]string{stringifyArg(ref["type"]), stringifyArg(ref["id"])}
+			if row := included[key]; row != nil {
+				related = append(related, row)
+				delete(included, key)
+			}
+		}
+		for _, value := range items {
+			item := value.(map[string]any)
+			rels, _ := item["relationships"].(map[string]any)
+			for _, v := range rels {
+				link, _ := v.(map[string]any)
+				if refs, ok := link["data"].([]any); ok {
+					for _, ref := range refs {
+						addRelated(ref)
+					}
+				} else {
+					addRelated(link["data"])
 				}
 			}
-			if complete {
-				doc["data"] = items
-				doc["meta"] = map[string]any{"scope_complete": true, "total": len(items)}
-				delete(doc, "links")
-				body, _ := json.Marshal(doc)
-				return code, body, nil
+		}
+		body, _ := json.Marshal(map[string]any{"data": items, "meta": meta, "included": related})
+		return body
+	}
+	code, raw, err := fetch(path, "")
+	items := make([]any, 0)
+	if err == nil && code >= 200 && code < 300 {
+		unwrapped, complete := unwrapMemberTodoList(raw, memberID)
+		doc, rows := decodeMCPList(unwrapped)
+		if rows != nil {
+			rememberIncluded(doc)
+			var verified bool
+			items, verified = scopedMemberTodoRows(rows, memberID, relation, status)
+			if complete && verified {
+				return code, makeBody(items, ""), nil
 			}
 		}
 	}
 
-	code, raw, err = doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, path, "", nil)
-	if err != nil || code < 200 || code >= 300 {
-		return code, raw, err
+	// shortcut: the uncompleted endpoint can omit tasks, replace it when Tower supports cross-member full relationships.
+	reason := "Tower 全量接口未能确认该成员的完整任务关系，当前结果仅包含已核验归属的任务"
+	seen := make(map[string]bool)
+	for _, row := range items {
+		seen[stringifyArg(row.(map[string]any)["id"])] = true
 	}
-	doc, rows := decodeMCPList(raw)
-	if rows == nil {
-		return code, raw, fmt.Errorf("Tower 返回的成员待办格式无效或超出响应大小限制")
+	usable := len(items) > 0
+	kind := strings.TrimSuffix(path, "_todos")
+	for _, subset := range []string{"uncompleted", "completed"} {
+		if status != "all" && status != subset {
+			continue
+		}
+		query, page := "", 1
+		for {
+			fallbackCode, fallbackRaw, fallbackErr := fetch(kind+"_"+subset+"_todos", query)
+			if fallbackErr != nil || fallbackCode < 200 || fallbackCode >= 300 {
+				if status != "all" && !usable {
+					return fallbackCode, fallbackRaw, fallbackErr
+				}
+				reason += fmt.Sprintf("，%s 列表第 %d 页未能读取", subset, page)
+				break
+			}
+			doc, rows := decodeMCPList(fallbackRaw)
+			if rows == nil {
+				break
+			}
+			usable = true
+			rememberIncluded(doc)
+			// The dedicated endpoint already filters by status. Verify every row's member.
+			matches, _ := scopedMemberTodoRows(rows, memberID, relation, "all")
+			for _, row := range matches {
+				id := stringifyArg(row.(map[string]any)["id"])
+				if !seen[id] {
+					items = append(items, row)
+					seen[id] = true
+				}
+			}
+			links, _ := doc["links"].(map[string]any)
+			next := mcpLinkedPage(links["next"])
+			if subset == "uncompleted" || next <= page {
+				break
+			}
+			page = next
+			query = url.Values{"page[number]": []string{strconv.Itoa(page)}}.Encode()
+		}
 	}
-	reason := "未能确认成员全部任务关系，当前结果来自 Tower 可能省略任务的专用待办接口。"
-	doc["meta"] = map[string]any{
-		"scope_complete":    false,
-		"scope_warning":     reason,
-		"incomplete_reason": reason,
+	if !usable {
+		if err != nil || code < 200 || code >= 300 {
+			return code, raw, err
+		}
+		return http.StatusBadGateway, nil, fmt.Errorf("Tower 未返回可验证归属的成员任务列表")
 	}
-	body, _ := json.Marshal(doc)
-	return code, body, nil
+	return http.StatusOK, makeBody(items, reason), nil
 }

@@ -1057,7 +1057,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 		case req.Method == http.MethodGet && req.URL.Path == "/api/v1/members/mem-1/assigned_uncompleted_todos":
 			writeJSON(writer, http.StatusOK, map[string]any{
 				"data": []map[string]any{
-					{"id": "todo-a1", "type": "todos", "attributes": map[string]any{"content": "Fix bug"}},
+					{"id": "todo-a1", "type": "todos", "relationships": map[string]any{"assignee": map[string]any{"data": map[string]any{"id": "mem-1"}}}, "attributes": map[string]any{"content": "Fix bug"}},
 				},
 			})
 		case req.Method == http.MethodPost && req.URL.Path == "/api/v1/teams/team-1/direct_uploads":

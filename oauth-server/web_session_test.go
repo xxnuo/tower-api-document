@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"testing"
 )
 
@@ -104,8 +105,90 @@ func TestSearchIncludesCurrentTeamAndTeamSwitcher(t *testing.T) {
 	}
 }
 
+func TestWebSearchRequiresKeywordOrTag(t *testing.T) {
+	const member = "cccccccccccccccccccccccccccccccc"
+	if _, err := webSearchQuery(map[string]any{"keyword": "  ", "member_guid": member}); err == nil {
+		t.Fatal("expected an error for a member filter without a keyword or tag")
+	}
+	query, err := webSearchQuery(map[string]any{"keyword": "  ", "tag": "#测试", "member_guid": member})
+	if err != nil || query.Has("keyword") || query.Get("tag") != "#测试" || query.Get("member_guid") != member {
+		t.Fatalf("query = %v, err = %v", query, err)
+	}
+	if _, err := webSearchQuery(map[string]any{"keyword": "测试", "member_guid": "invalid"}); err == nil {
+		t.Fatal("expected an error for a malformed member GUID")
+	}
+}
+
+func TestWebSearchOnlySearchesMemberTeam(t *testing.T) {
+	const member = "cccccccccccccccccccccccccccccccc"
+	const unknownMember = "dddddddddddddddddddddddddddddddd"
+	const forbiddenMember = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	const memberTeam = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const otherTeam = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/v1/members/" + member:
+			if r.Header.Get("Authorization") != "Bearer token" {
+				t.Error("missing account authorization")
+			}
+			w.Write([]byte(`{"data":{"id":"` + member + `","type":"members","relationships":{"team":{"data":{"id":"` + memberTeam + `","type":"teams"}}}}}`))
+		case "/api/v1/members/" + unknownMember:
+			http.NotFound(w, r)
+		case "/api/v1/members/" + forbiddenMember:
+			w.WriteHeader(http.StatusForbidden)
+		case "/launchpad/":
+			w.Write([]byte(`<input id="team-guid" value="` + memberTeam + `"><a href="/teams/` + otherTeam + `">其他团队</a>`))
+		case "/teams/" + memberTeam + "/search", "/teams/" + otherTeam + "/search":
+			if len(requests) == 2 && requests[0] == "/api/v1/members/"+member && r.URL.Query().Get("member_guid") != member {
+				t.Error("member filter was not forwarded")
+			}
+			w.Write([]byte(`<span class="result-count">0</span>`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	cfg := testConfig(server.URL)
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	cfg.Store = store
+	acc, err := store.SaveLogin(&UserInfo{ID: "test"}, TokenResponse{AccessToken: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveWebSession(acc.ID, []webCookie{{Name: "session", Value: "fixture", Path: "/"}}, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		member string
+		paths  []string
+		fails  bool
+	}{
+		{member, []string{"/api/v1/members/" + member, "/teams/" + memberTeam + "/search"}, false},
+		{unknownMember, []string{"/api/v1/members/" + unknownMember}, true},
+		{forbiddenMember, []string{"/api/v1/members/" + forbiddenMember}, true},
+		{"", []string{"/launchpad/", "/teams/" + memberTeam + "/search", "/teams/" + otherTeam + "/search"}, false},
+	} {
+		requests = nil
+		query := url.Values{"keyword": {"测试"}, "page": {"1"}}
+		if tc.member != "" {
+			query.Set("member_guid", tc.member)
+		}
+		_, err := runWebSearch(t.Context(), cfg, acc, query)
+		if (err != nil) != tc.fails || !slices.Equal(requests, tc.paths) {
+			t.Errorf("member %q: requests = %v, err = %v", tc.member, requests, err)
+		}
+	}
+}
+
 func TestWebSearchLastPageWithFilters(t *testing.T) {
-	query, err := webSearchQuery(map[string]any{"keyword": "测试", "page": 2, "member_guid": "member", "target_gid": "gid://tower2/Project/123", "sort": 2, "exclude_trash": false})
+	query, err := webSearchQuery(map[string]any{"keyword": "测试", "page": 2, "member_guid": "cccccccccccccccccccccccccccccccc", "target_gid": "gid://tower2/Project/123", "sort": 2, "exclude_trash": false})
 	if err != nil {
 		t.Fatal(err)
 	}
