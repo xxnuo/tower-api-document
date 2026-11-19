@@ -784,7 +784,7 @@ export default function App() {
         </div>
 
         <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-          Tower 文档中缺失 API 由本服务实现
+          Tower 缺失的 API 由本服务实现
         </p>
 
         {/* 底部用户信息与快捷操作 */}
