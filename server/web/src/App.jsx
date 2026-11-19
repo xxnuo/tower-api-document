@@ -1185,7 +1185,7 @@ ${mcpConfigSnippet}
                         <div className="flex items-center justify-between gap-4 border-t pt-3">
                           <div className="space-y-1">
                             <Label id="agent-signature-label" htmlFor="agent-signature">Agent 评论时署名</Label>
-                            <p id="agent-signature-hint" className="text-xs text-muted-foreground">向 Agent 提供评论和讨论的署名规则。已连接的客户端需重新握手以刷新规则。</p>
+                            <p id="agent-signature-hint" className="text-xs text-muted-foreground">开启后，会提醒 Agent 在评论和讨论末尾注明助手名和模型名；关闭后，不再提醒。</p>
                           </div>
                           <Switch id="agent-signature" aria-labelledby="agent-signature-label" aria-describedby="agent-signature-hint" checked={creds.agent_signature ?? true} disabled={loading} onCheckedChange={setAgentSignature} />
                         </div>
