@@ -49,7 +49,7 @@ func TestRawRequestProjectionOrderAndErrors(t *testing.T) {
 		t.Fatalf("data only: %s", data)
 	}
 	ordered, failed := call(path, map[string]any{"query": "order=-created_at"})
-	if !failed || !strings.Contains(ordered, "GET "+path) || !strings.Contains(ordered, "order=-created_at") {
+	if !failed || !strings.Contains(ordered, "GET "+path) || !strings.Contains(ordered, "list_todos") || !strings.Contains(ordered, "order=-created_at") {
 		t.Fatalf("unsupported order: %s", ordered)
 	}
 	for _, tt := range []struct {
@@ -62,7 +62,7 @@ func TestRawRequestProjectionOrderAndErrors(t *testing.T) {
 	} {
 		out, failed := call(tt.path, map[string]any{})
 		if !failed || !strings.Contains(out, "GET "+tt.path) || !strings.Contains(out, "HTTP "+tt.status) ||
-			!strings.Contains(out, tt.body) || (strings.Contains(out, "list_project_todos") != tt.hint) {
+			(tt.status == "404") != strings.Contains(out, "无法区分") || !strings.Contains(out, tt.body) || (strings.Contains(out, "list_project_todos") != tt.hint) {
 			t.Fatalf("error for %s: %s", tt.path, out)
 		}
 	}

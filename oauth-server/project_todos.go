@@ -83,6 +83,91 @@ func saveProjectScan(saved savedProjectScan) string {
 	return token
 }
 
+func (state *upstreamProjectPage) fetch(ctx context.Context, cfg Config, key string, acc *StoredAccount, path string, todos, completed bool) ([]map[string]any, error) {
+	query := url.Values{
+		"page[number]": {strconv.Itoa(state.number)},
+		"page[size]":   {strconv.Itoa(maxListPageSize)},
+	}
+	if todos && completed {
+		query.Set("completed_todo", "true")
+	}
+	code, body, err := doTowerHTTPWithRefresh(ctx, cfg, key, acc, http.MethodGet, path, query.Encode(), nil)
+	if code < 200 || code >= 300 || err != nil {
+		return nil, fmt.Errorf("%s", towerMCPError(http.MethodGet, path, code, body, err))
+	}
+	var doc struct {
+		Included []map[string]any           `json:"included"`
+		Data     []map[string]any           `json:"data"`
+		Links    map[string]json.RawMessage `json:"links"`
+		Meta     struct {
+			HasMore    *bool `json:"has_more"`
+			TotalPages int   `json:"total_pages"`
+		} `json:"meta"`
+	}
+	if json.Unmarshal(body, &doc) != nil || doc.Data == nil {
+		return nil, fmt.Errorf("GET %s 返回的 data 不是任务或清单数组", path)
+	}
+	var ids strings.Builder
+	for _, row := range doc.Data {
+		id, _ := row["id"].(string)
+		if id == "" {
+			return nil, fmt.Errorf("GET %s 返回了缺少 ID 的记录", path)
+		}
+		ids.WriteString(strconv.Quote(id))
+	}
+	signature := sha256.Sum256([]byte(ids.String()))
+	repeated := state.seen[signature]
+	next, hasNext := doc.Links["next"]
+	switch {
+	case hasNext && (string(next) == "null" || string(next) == "\"\""),
+		doc.Meta.HasMore != nil && !*doc.Meta.HasMore,
+		doc.Meta.TotalPages > 0 && state.number >= doc.Meta.TotalPages:
+		state.number = 0
+	case !hasNext && doc.Meta.HasMore == nil && doc.Meta.TotalPages == 0 && (len(doc.Data) == 0 || repeated && !todos):
+		// Tower also exposes unpaginated collections and pages with no links.
+		state.number = 0
+		return nil, nil
+	default:
+		if repeated {
+			return nil, fmt.Errorf("GET %s 重复返回相同记录，无法继续分页", path)
+		}
+		state.number++
+		if hasNext {
+			var href string
+			if json.Unmarshal(next, &href) != nil {
+				var link struct{ Href string }
+				_ = json.Unmarshal(next, &link)
+				href = link.Href
+			}
+			if u, err := url.Parse(href); err == nil {
+				n := parsePositivePage(u.Query().Get("page[number]"))
+				if n > 0 && n < state.number {
+					return nil, fmt.Errorf("GET %s 返回了无法继续的分页链接", path)
+				}
+				if n > 0 {
+					state.number = n
+				}
+			}
+		}
+	}
+	if state.seen == nil {
+		state.seen = make(map[[32]byte]bool)
+	}
+	state.seen[signature] = true
+	if todos {
+		included := map[[2]string]map[string]any{}
+		for _, obj := range doc.Included {
+			included[[2]string{stringifyArg(obj["type"]), stringifyArg(obj["id"])}] = obj
+		}
+		for i, row := range doc.Data {
+			item := compactResource(row, false, included)
+			addTodoListDates(item, row)
+			doc.Data[i] = resultProfiles["list_todos"].selectFields(item)
+		}
+	}
+	return doc.Data, nil
+}
+
 func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAccount, args map[string]any) (string, bool) {
 	projectID := stringifyArg(args["project_id"])
 	if projectID == "" {
@@ -92,78 +177,7 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 	keyHash := sha256.Sum256([]byte(key))
 	pageSize := clampPageSize(stringifyArg(args["page_size"]))
 	scan := projectTodoScan{seen: make(map[string]bool)}
-	fetch := func(path string, state *upstreamProjectPage, todos bool) ([]map[string]any, error) {
-		query := url.Values{
-			"page[number]": {strconv.Itoa(state.number)},
-			"page[size]":   {strconv.Itoa(maxListPageSize)},
-		}
-		if todos && completed {
-			query.Set("completed_todo", "true")
-		}
-		code, body, err := doTowerHTTPWithRefresh(ctx, cfg, key, acc, http.MethodGet, path, query.Encode(), nil)
-		if code < 200 || code >= 300 || err != nil {
-			return nil, fmt.Errorf("%s", towerMCPError(http.MethodGet, path, code, body, err))
-		}
-		var doc struct {
-			Data  []map[string]any           `json:"data"`
-			Links map[string]json.RawMessage `json:"links"`
-			Meta  struct {
-				HasMore    *bool `json:"has_more"`
-				TotalPages int   `json:"total_pages"`
-			} `json:"meta"`
-		}
-		if json.Unmarshal(body, &doc) != nil || doc.Data == nil {
-			return nil, fmt.Errorf("GET %s 返回的 data 不是任务或清单数组", path)
-		}
-		var ids strings.Builder
-		for _, row := range doc.Data {
-			id, _ := row["id"].(string)
-			if id == "" {
-				return nil, fmt.Errorf("GET %s 返回了缺少 ID 的记录", path)
-			}
-			ids.WriteString(strconv.Quote(id))
-		}
-		signature := sha256.Sum256([]byte(ids.String()))
-		repeated := state.seen[signature]
-		next, hasNext := doc.Links["next"]
-		switch {
-		case hasNext && (string(next) == "null" || string(next) == "\"\""),
-			doc.Meta.HasMore != nil && !*doc.Meta.HasMore,
-			doc.Meta.TotalPages > 0 && state.number >= doc.Meta.TotalPages:
-			state.number = 0
-		case !hasNext && doc.Meta.HasMore == nil && doc.Meta.TotalPages == 0 && (len(doc.Data) == 0 || repeated && !todos):
-			// Tower also exposes unpaginated collections and pages with no links.
-			state.number = 0
-			return nil, nil
-		default:
-			if repeated {
-				return nil, fmt.Errorf("GET %s 重复返回相同记录，无法继续分页", path)
-			}
-			state.number++
-			if hasNext {
-				var href string
-				if json.Unmarshal(next, &href) != nil {
-					var link struct{ Href string }
-					_ = json.Unmarshal(next, &link)
-					href = link.Href
-				}
-				if u, err := url.Parse(href); err == nil {
-					n := parsePositivePage(u.Query().Get("page[number]"))
-					if n > 0 && n < state.number {
-						return nil, fmt.Errorf("GET %s 返回了无法继续的分页链接", path)
-					}
-					if n > 0 {
-						state.number = n
-					}
-				}
-			}
-		}
-		if state.seen == nil {
-			state.seen = make(map[[32]byte]bool)
-		}
-		state.seen[signature] = true
-		return doc.Data, nil
-	}
+
 	if cursor := stringifyArg(args["cursor"]); cursor != "" {
 		projectScanCache.Lock()
 		saved, ok := projectScanCache.entries[cursor]
@@ -179,7 +193,7 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 		path := "/api/v1/projects/" + url.PathEscape(projectID) + "/todolists"
 		seenLists := make(map[string]bool)
 		for state := (upstreamProjectPage{number: 1}); state.number > 0; {
-			lists, err := fetch(path, &state, false)
+			lists, err := state.fetch(ctx, cfg, key, acc, path, false, completed)
 			if err != nil {
 				return err.Error(), true
 			}
@@ -210,7 +224,7 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 				continue
 			}
 			path := "/api/v1/todolists/" + url.PathEscape(listID) + "/todos"
-			rows, err := fetch(path, &scan.taskPage, true)
+			rows, err := scan.taskPage.fetch(ctx, cfg, key, acc, path, true, completed)
 			if err != nil {
 				return err.Error(), true
 			}
@@ -224,9 +238,7 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 			continue
 		}
 		scan.seen[id] = true
-		compact := compactResource(row, false, nil)
-		addTodoListDates(compact, row)
-		item := resultProfiles["list_todos"].selectFields(compact)
+		item := maps.Clone(row)
 		item["todolist_id"] = listID
 		if len(items) == pageSize {
 			scan.pending = item

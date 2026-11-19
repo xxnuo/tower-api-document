@@ -37,7 +37,7 @@ func executeRawRequest(ctx context.Context, cfg Config, key string, acc *StoredA
 	if method == http.MethodGet && isTowerCollectionPath(path, "todolists", "todos") {
 		for _, order := range q["order"] {
 			if strings.TrimSpace(order) == "-created_at" {
-				return fmt.Sprintf("%s %s 不支持 order=-created_at。去掉该参数后可分页读取；如需按创建时间排序，请在获取完整结果后排序。", method, path), true
+				return fmt.Sprintf("%s %s 不支持 order=-created_at。请使用 list_todos 并传入 order=-created_at，网关会对完整清单排序后分页。", method, path), true
 			}
 		}
 	}
@@ -156,6 +156,9 @@ func towerMCPError(method, path string, status int, body []byte, err error) stri
 		return fmt.Sprintf("请求 Tower API %s %s 失败: %v", method, path, err)
 	}
 	message := fmt.Sprintf("Tower API %s %s 返回错误 HTTP %d:\n%s", method, path, status, agentText(body))
+	if status == http.StatusNotFound {
+		message += "\n仅凭 HTTP 404 无法区分路径无效、资源不存在或当前账号不可见。"
+	}
 	if status == http.StatusNotFound && method == http.MethodGet && isTowerCollectionPath(path, "projects", "todos") {
 		message += "\n请使用 list_project_todos 并传入 project_id，或先调用 list_todolists，再用 list_todos 获取各清单任务。"
 	}

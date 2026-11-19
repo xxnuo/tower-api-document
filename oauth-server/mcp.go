@@ -279,6 +279,7 @@ var towerMCPTools = []mcpToolSpec{
 			pPath("todolist_id", "任务清单 ID"),
 			pPage(),
 			pPageSize(),
+			{Name: "order", Type: "string", Desc: "传 -created_at 时，按整份清单的创建时间倒序排列后分页。"},
 			pQuery("completed_todo", "completed_todo", "boolean", "是否包含已完成任务（默认 false）"),
 		},
 	},
@@ -1110,6 +1111,16 @@ func executeMCPTool(
 				}
 			}
 		}
+	}
+
+	if name == "list_todos" && args["order"] != nil {
+		if stringifyArg(args["order"]) != "-created_at" {
+			return "list_todos 仅支持 order=-created_at", true
+		}
+		if maxItems == 0 {
+			maxItems = defaultListPageSize
+		}
+		return listTodosByCreation(ctx, cfg, mcpKey, acc, resolvedPath, queryVals.Has("completed_todo"), pageNum, maxItems)
 	}
 
 	if name == "list_events" && parsePositivePage(stringifyArg(args["page"])) > 1 {
