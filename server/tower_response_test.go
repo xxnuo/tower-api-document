@@ -40,3 +40,28 @@ func TestListTodosIncludesCompletedOnlyWhenRequested(t *testing.T) {
 		}
 	}
 }
+
+func TestTodoLinkLookup(t *testing.T) {
+	calls := 0
+	tower := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/api/v1/teams/750316/todos/75345" {
+			t.Errorf("unexpected lookup path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":"parent","relationships":{"sub_todos":{"data":[{"type":"todos","id":"child"}]}}}}`))
+	}))
+	defer tower.Close()
+	index := make(map[string]mcpToolSpec)
+	for _, spec := range towerMCPTools {
+		index[spec.Name] = spec
+	}
+	cfg := testConfig(tower.URL)
+	got, failed := executeMCPTool(t.Context(), cfg, "", &StoredAccount{}, index, "get_todo", map[string]any{"todo_id": "75345"})
+	if !failed || !strings.Contains(got, "get_todo_by_number") || !strings.Contains(got, "75345") || calls != 0 {
+		t.Fatalf("unexpected short number handling: %s, calls=%d", got, calls)
+	}
+	got, failed = executeMCPTool(t.Context(), cfg, "", &StoredAccount{}, index, "get_todo_by_number", map[string]any{"team_id": "750316", "team_wide_id": "75345"})
+	if failed || !strings.Contains(got, "sub_todo_count：1") || !strings.Contains(got, "child") || calls != 1 {
+		t.Fatalf("unexpected link lookup: %s, calls=%d", got, calls)
+	}
+}

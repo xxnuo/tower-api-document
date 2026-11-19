@@ -695,7 +695,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 <summary className="cursor-pointer select-none font-medium hover:text-foreground">
                   查看服务端下发给 Agent 的 MCP Instructions 说明
                 </summary>
-                <p className="mt-2 rounded-lg border bg-muted/40 p-3 leading-relaxed text-foreground">
+                <p className="mt-2 whitespace-pre-line rounded-lg border bg-muted/40 p-3 leading-relaxed text-foreground">
                   {serverMeta.instructions}
                 </p>
               </details>

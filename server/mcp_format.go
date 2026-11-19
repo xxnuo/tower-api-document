@@ -59,7 +59,7 @@ func compactResource(item map[string]any, summary bool, included map[[2]string]m
 		}
 		switch d := rel["data"].(type) {
 		case []any:
-			if len(d) > 0 {
+			if len(d) > 0 || (!summary && k == "sub_todos") {
 				refs := make([]any, 0, len(d))
 				for _, r := range d {
 					refs = append(refs, ref(r))
@@ -89,9 +89,17 @@ func compactTowerBody(raw []byte, tool string) any {
 	} else if !ok {
 		return value
 	}
+	selectDetail := func(record map[string]any) map[string]any {
+		if tool == "get_todo" || tool == "get_todo_by_number" {
+			if children, ok := record["sub_todos"].([]any); ok {
+				record["sub_todo_count"] = len(children)
+			}
+		}
+		return resultProfiles[tool].selectFields(record)
+	}
 	data, ok := doc["data"]
 	if !ok {
-		return resultProfiles[tool].selectFields(doc)
+		return selectDetail(doc)
 	}
 	included := map[[2]string]map[string]any{}
 	rows, _ := doc["included"].([]any)
@@ -107,7 +115,7 @@ func compactTowerBody(raw []byte, tool string) any {
 		if tool == "get_team_resource" && d["type"] != nil {
 			out["type"] = d["type"]
 		}
-		return resultProfiles[tool].selectFields(out)
+		return selectDetail(out)
 	case []any:
 		items := make([]any, 0, len(d))
 		for _, v := range d {

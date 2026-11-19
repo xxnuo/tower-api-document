@@ -89,3 +89,13 @@ func TestLinkedDetailResults(t *testing.T) {
 		})
 	}
 }
+
+func TestSubTodoCountDistinguishesEmptyAndMissing(t *testing.T) {
+	for _, tool := range []string{"get_todo", "get_todo_by_number"} {
+		empty := compactTowerBody([]byte(`{"data":{"id":"parent","relationships":{"sub_todos":{"data":[]}}}}`), tool).(map[string]any)
+		missing := compactTowerBody([]byte(`{"data":{"id":"parent"}}`), tool).(map[string]any)
+		if empty["sub_todo_count"] != 0 || missing["sub_todo_count"] != nil {
+			t.Errorf("%s: empty=%v missing=%v", tool, empty, missing)
+		}
+	}
+}

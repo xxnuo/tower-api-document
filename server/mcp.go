@@ -78,6 +78,8 @@ func pBody(name, typ string, required bool, desc string) mcpParam {
 	return mcpParam{Name: name, Type: typ, In: "body", Required: required, Desc: desc}
 }
 
+const todoLinkHint = `从分享文本或裸链接 https://tower.im/teams/750316/todos/75345/（末尾 / 可省略）直接调用 get_todo_by_number(team_id="750316", team_wide_id="75345")。`
+
 var towerMCPTools = []mcpToolSpec{
 	// 用户
 	{
@@ -311,17 +313,17 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "get_todo", Title: "获取任务详情",
-		Desc:   "根据 todo_id 获取任务完整信息（含检查项、评论、负责人等关联数据）",
+		Desc:   "按任务 GUID 获取任务完整信息（含检查项、评论、负责人等关联数据）。任务分享链接请用 get_todo_by_number。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todos/{todo_id}",
-		Params: []mcpParam{pPath("todo_id", "任务 ID")},
+		Params: []mcpParam{pPath("todo_id", "任务 GUID")},
 	},
 	{
 		Name: "get_todo_by_number", Title: "按团队内任务编号获取任务",
-		Desc:   "根据 team_id 和团队内任务短编号（team_wide_id，如 #123 中的 123）获取任务详情",
+		Desc:   "按团队内短编号精确获取任务详情及上游返回的直接子任务。" + todoLinkHint,
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/todos/{team_wide_id}",
 		Params: []mcpParam{
-			pPath("team_id", "团队 ID"),
-			pPath("team_wide_id", "团队内任务短编号"),
+			pPath("team_id", "团队 ID，可直接使用链接中 /teams/ 后的数字编号"),
+			pPath("team_wide_id", "链接中 /todos/ 后的任务短编号，如 75345"),
 		},
 	},
 	{
@@ -696,7 +698,7 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索，须提供非空的 keyword 或 tag。需要该账号已完成网页登录。用 team_id 限定团队。文档命中后将 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
+			"description": "使用 Tower 网页搜索，须提供非空的 keyword 或 tag。需要该账号已完成网页登录。用团队 GUID 限定团队。数字关键词也按网页关键词搜索，按短编号精确查询任务请用 get_todo_by_number。文档命中后将 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -873,7 +875,22 @@ func handleMCP(cfg Config) http.HandlerFunc {
 		toolIndex[spec.Name] = spec
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: appVersion}, &mcp.ServerOptions{
-		Instructions: "查询团队知识库时，用 search_todos(team_id, keyword, category=18) 搜索，再将命中的 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。完整分页枚举项目任务请用 list_project_todos。网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。标准列表工具默认每页 20 条（最大 50），按 meta.next_page 翻页；list_events 将 meta.next_cursor 传给 last_item_id。meta.returned 是本次返回数，meta.total 仅在可确认时提供。成员待办基于活跃且未完成的任务，任务关系不可用时可能回退到部分列表。my_todo_overview 未指定团队时最多检查 10 个团队。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+		Instructions: `任务查询
+- 任务链接：` + todoLinkHint + `
+- 任务 GUID 用 get_todo。列出项目全部任务用 list_project_todos。查询自己的跨团队待办用 my_todo_overview。
+- 网页关键词、标签搜索用 search_todos。按团队、项目 ID 或完成状态聚合扫描用 advanced_search_todos。
+
+知识库
+- 搜索文档用 search_todos(team_id, keyword, category=18)，再把命中的 team_id 和 url 传给 read_repository_item。
+- 浏览目录用 list_repositories 和 list_repository_items。
+
+资源操作
+- 缺少 ID 时，用 list_teams 获取团队，再用 list_projects 或 list_team_members 获取项目或成员。项目内的任务清单用 list_todolists。
+- 上传项目文件用 upload_file。任务操作遵循 Tower 权限，服务端默认开启硬删除保护。
+
+分页
+- 标准列表默认每页 20 条，最多 50 条。按 meta.next_page 翻页。list_events 用 meta.next_cursor 作为下一次的 last_item_id。
+- meta.returned 是本次返回数，meta.total 仅在总数可确认时提供。`,
 	})
 	for _, def := range listMCPToolDefinitions() {
 		data, err := json.Marshal(def)
@@ -1078,6 +1095,13 @@ func executeMCPTool(
 	spec, ok := toolIndex[name]
 	if !ok {
 		return "未知工具: " + name, true
+	}
+
+	if name == "get_todo" {
+		id := stringifyArg(args["todo_id"])
+		if id != "" && !guidPattern.MatchString(id) && strings.Trim(id, "0123456789") == "" {
+			return fmt.Sprintf("todo_id 需要任务 GUID。请调用 get_todo_by_number，team_wide_id 传 %q，team_id 传链接中 /teams/ 后的团队编号。", id), true
+		}
 	}
 
 	resolvedPath := spec.PathTemplate
