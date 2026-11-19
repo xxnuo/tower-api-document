@@ -792,7 +792,7 @@ export default function App() {
         </p>
 
         {/* 底部用户信息与快捷操作 */}
-        <div className="p-3 border-t border-sidebar-border bg-sidebar/50 space-y-2">
+        <div className="p-3 pb-5 border-t border-sidebar-border bg-sidebar/50 space-y-2">
           <div className="flex items-center gap-1.5">
             <DropdownMenu>
               <DropdownMenuTrigger
