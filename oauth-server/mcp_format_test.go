@@ -10,7 +10,7 @@ import (
 func TestCompactTodoList(t *testing.T) {
 	raw := []byte(`{"data":[{"id":"t","type":"todos","attributes":{"content":"task","desc":"long body","is_completed":false},"relationships":{"assignee":{"data":{"type":"members","id":"m"}}}}],"included":[{"id":"m","type":"members","attributes":{"nickname":"Alice","gavatar":"image"}}],"links":{"next":"page2"}}`)
 	out, err := json.Marshal(compactTowerBody(raw, "list_todos"))
-	if err != nil || string(out) != `{"items":[{"assignee":{"id":"m","nickname":"Alice"},"content":"task","id":"t","is_completed":false}],"next":"page2"}` {
+	if err != nil || string(out) != `{"items":[{"assignee":{"id":"m","nickname":"Alice"},"content":"task","created_at":"上游未提供","due_at":"上游未提供","id":"t","is_completed":false,"updated_at":"上游未提供"}],"next":"page2"}` {
 		t.Fatal(string(out), err)
 	}
 }
@@ -51,11 +51,11 @@ func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
 }
 
 func TestMemberTodoViews(t *testing.T) {
-	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"周五","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}}}}]}`)
+	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"2026-11-20","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}}}}]}`)
 	for _, tc := range []struct{ tool, want, omit string }{
 		{"list_member_created_uncompleted_todos", "M1", "周一"},
-		{"list_member_assigned_uncompleted_todos", "周五", "M1"},
-		{"list_member_assigned_completed_todos", "周一", "周五"},
+		{"list_member_assigned_uncompleted_todos", "2026-11-20", "M1"},
+		{"list_member_assigned_completed_todos", "2026-11-20", "M1"},
 	} {
 		p := resultProfiles[tc.tool]
 		text := p.text(compactTowerBody(raw, tc.tool))

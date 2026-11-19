@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -192,13 +193,17 @@ var towerMCPTools = []mcpToolSpec{
 		Name: "list_member_assigned_todos", Title: "获取指派给成员的全部任务",
 		Desc:   "获取指派给指定成员的全部任务（含已完成和未完成）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
+		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
 		Name: "list_member_assigned_uncompleted_todos", Title: "获取指派给成员的未完成任务",
-		Desc:   "获取指派给指定成员且尚未完成的任务列表",
+		Desc:   "获取指派给指定成员的未完成任务。设置 overdue 或 due_before 时先在 Tower 返回的成员任务中筛选，再分页（筛选时默认 50 条）。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_uncompleted_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
+		Params: []mcpParam{
+			pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize(),
+			{Name: "overdue", Type: "boolean", Desc: "仅返回截止日期早于北京时间今天的任务"},
+			{Name: "due_before", Type: "string", Desc: "仅返回截止日期早于 YYYY-MM-DD 的任务，不含该日。与 overdue 同用时两者均需满足。"},
+		},
 	},
 	{
 		Name: "list_member_assigned_completed_todos", Title: "获取指派给成员的已完成任务",
@@ -210,13 +215,13 @@ var towerMCPTools = []mcpToolSpec{
 		Name: "list_member_created_todos", Title: "获取成员创建的全部任务",
 		Desc:   "获取由指定成员创建的全部任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
+		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
 		Name: "list_member_created_uncompleted_todos", Title: "获取成员创建的未完成任务",
 		Desc:   "获取由指定成员创建且未完成的任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_uncompleted_todos",
-		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
+		Params: []mcpParam{pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
 		Name: "list_member_created_completed_todos", Title: "获取成员创建的已完成任务",
@@ -548,13 +553,12 @@ var towerMCPTools = []mcpToolSpec{
 	// 动态与通知
 	{
 		Name: "list_events", Title: "获取团队动态列表",
-		Desc:   "获取指定团队的活动动态流，可通过 last_item_id 游标向后翻页",
+		Desc:   "获取指定团队的活动动态流。将响应的 meta.next_cursor 传给 last_item_id 继续，不使用页码",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/events",
 		Params: []mcpParam{
 			pPath("team_id", "团队 ID"),
-			pQuery("last_item_id", "last_item_id", "integer", "上一页最后一条动态 ID，用于游标分页"),
-			pLocalPage(),
-			pLocalPageSize(),
+			pQuery("last_item_id", "last_item_id", "integer", "上一页响应的 meta.next_cursor"),
+			pQuery("page_size", "limit", "integer", "每页返回条数，默认 20，最大 50"),
 		},
 	},
 	{
@@ -650,11 +654,11 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "my_todo_overview",
-			"description": "聚合获取当前账号跨团队的未完成任务汇总（自动查询所属团队、解析当前成员 member_id 并拉取指派给自己或自己创建的未完成任务，无需分步串联 ID）",
+			"description": "聚合当前账号未完成任务。不指定团队时最多查询 10 个团队，每类任务分别报告本次返回数和可确认的总数。使用成员任务关系统计活跃、未完成任务；关系数据不可用时，总数未知。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"team_id":         map[string]any{"type": "string", "description": "可选团队 ID；不传则自动汇总当前账号所属的全部团队"},
+					"team_id":         map[string]any{"type": "string", "description": "可选团队 ID；不传则自动检查当前账号所属的前 10 个团队"},
 					"include_created": map[string]any{"type": "boolean", "description": "是否同时拉取自己创建的未完成任务（默认 false，仅拉取指派给自己的未完成任务）"},
 					"page_size":       map[string]any{"type": "integer", "description": "每个列表最多返回的任务条数（默认 20，最大 50）"},
 				},
@@ -669,7 +673,7 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。",
+			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。实测任务与评论均对应各自的创建时间。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -767,6 +771,7 @@ func listMCPToolDefinitions() []map[string]any {
 			"title": "移除任务所属项目", "readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false,
 		},
 	})
+	out = append(out, projectTodosToolDefinition())
 	out = append(out, map[string]any{
 		"name":        "raw_request",
 		"description": "向 Tower /api/v1/* 发送自定义 HTTP 请求（用于自定义筛选参数或未单独封装的高级接口）",
@@ -779,6 +784,8 @@ func listMCPToolDefinitions() []map[string]any {
 				"page":      map[string]any{"type": "integer", "description": "可选分页页码（从 1 开始）"},
 				"page_size": map[string]any{"type": "integer", "description": "可选每页返回条数（默认 20，最大 50）"},
 				"body":      map[string]any{"type": "object", "description": "可选 JSON 请求体对象"},
+				"data_only": map[string]any{"type": "boolean", "description": "只返回响应的 data，省略 included 和分页元数据"},
+				"fields":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "仅保留 data 中指定的字段，如 [\"id\", \"content\", \"created_at\"]，同时省略 included"},
 			},
 			"required": []string{"method", "path"},
 		},
@@ -798,7 +805,7 @@ func listMCPToolDefinitions() []map[string]any {
 			source = "Gateway"
 		}
 		meta := map[string]any{"agents-tower/source": source}
-		if tool["name"] == "advanced_search_todos" {
+		if tool["name"] == "advanced_search_todos" || tool["name"] == "list_project_todos" {
 			meta["agents-tower/tags"] = []string{"Multi-API"}
 		}
 		tool["_meta"] = meta
@@ -834,7 +841,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 		toolIndex[spec.Name] = spec
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: "1.0.0"}, &mcp.ServerOptions{
-		Instructions: "网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+		Instructions: "完整分页枚举项目任务请用 list_project_todos。网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。标准列表工具默认每页 20 条（最大 50），按 meta.next_page 翻页；list_events 将 meta.next_cursor 传给 last_item_id。meta.returned 是本次返回数，meta.total 仅在可确认时提供。成员待办基于活跃且未完成的任务，任务关系不可用时可能回退到部分列表。my_todo_overview 未指定团队时最多检查 10 个团队。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 	})
 	for _, def := range listMCPToolDefinitions() {
 		data, err := json.Marshal(def)
@@ -985,7 +992,7 @@ func executeMCPTool(
 	args map[string]any,
 ) (string, bool) {
 	if name == "get_current_datetime" {
-		now := time.Now().In(time.FixedZone("UTC+08:00", 8*60*60))
+		now := time.Now().In(towerTimeZone)
 		return resultProfiles[name].text(map[string]any{
 			"datetime": now.Format(time.RFC3339),
 			"weekday":  now.Weekday().String(),
@@ -1010,44 +1017,11 @@ func executeMCPTool(
 	if name == "upload_file" {
 		return executeUploadFile(ctx, cfg, mcpKey, acc, args)
 	}
+	if name == "list_project_todos" {
+		return executeListProjectTodos(ctx, cfg, mcpKey, acc, args)
+	}
 	if name == "raw_request" {
-		method := strings.ToUpper(stringifyArg(args["method"]))
-		switch method {
-		case http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
-		default:
-			return "不支持的 HTTP 方法: " + method, true
-		}
-		apiPath := stringifyArg(args["path"])
-		if !strings.HasPrefix(apiPath, "/api/v1/") {
-			return "path 必须以 /api/v1/ 开头", true
-		}
-		rawQuery := strings.TrimPrefix(stringifyArg(args["query"]), "?")
-		rawPage := parsePositivePage(stringifyArg(args["page"]))
-		if rawPage > 0 || stringifyArg(args["page_size"]) != "" {
-			qVals, qErr := url.ParseQuery(rawQuery)
-			if qErr == nil {
-				if rawPage > 0 {
-					qVals.Set("page[number]", strconv.Itoa(rawPage))
-				}
-				if ps := stringifyArg(args["page_size"]); ps != "" {
-					qVals.Set("page[size]", strconv.Itoa(clampPageSize(ps)))
-				}
-				rawQuery = qVals.Encode()
-			}
-		}
-		normalizedQuery, maxItems := normalizeListQuery(method, apiPath, rawQuery)
-		if rawPage <= 0 {
-			rawPage = 1
-		}
-		var bodyBytes []byte
-		if bodyObj, ok := args["body"]; ok && bodyObj != nil && method != http.MethodGet && method != http.MethodDelete {
-			encoded, err := json.Marshal(bodyObj)
-			if err != nil {
-				return "序列化请求体失败: " + err.Error(), true
-			}
-			bodyBytes = encoded
-		}
-		return callTowerForMCP(ctx, cfg, mcpKey, acc, name, method, apiPath, normalizedQuery, bodyBytes, rawPage, maxItems, false)
+		return executeRawRequest(ctx, cfg, mcpKey, acc, args)
 	}
 
 	spec, ok := toolIndex[name]
@@ -1092,6 +1066,10 @@ func executeMCPTool(
 			}
 			resolvedPath = strings.ReplaceAll(resolvedPath, "{"+param.Name+"}", url.PathEscape(strVal))
 		case "query":
+			// Tower treats any nonempty completed_todo query value as true.
+			if spec.Name == "list_todos" && param.Name == "completed_todo" && strVal == "false" {
+				continue
+			}
 			if strVal == "" {
 				continue
 			}
@@ -1134,6 +1112,10 @@ func executeMCPTool(
 		}
 	}
 
+	if name == "list_events" && parsePositivePage(stringifyArg(args["page"])) > 1 {
+		return "list_events 使用游标分页，请将上一页的 meta.next_cursor 传给 last_item_id", true
+	}
+
 	if hasPageParam && queryVals.Get("page[number]") == "" {
 		for _, param := range spec.Params {
 			if param.Name == "page" && param.In == "query" {
@@ -1146,12 +1128,25 @@ func executeMCPTool(
 			maxItems = defaultListPageSize
 		}
 		for _, param := range spec.Params {
-			if param.Name == "page_size" && param.In == "query" && queryVals.Get("page[size]") == "" {
-				queryVals.Set("page[size]", strconv.Itoa(maxItems))
+			if param.Name == "page_size" && param.In == "query" && queryVals.Get(param.WireName) == "" {
+				queryVals.Set(param.WireName, strconv.Itoa(maxItems))
 			}
 		}
 	} else if spec.Method == http.MethodGet && strings.HasPrefix(spec.Name, "list_") {
 		maxItems = maxListPageSize
+	}
+
+	if name == "list_member_assigned_uncompleted_todos" {
+		cutoff, err := todoDueCutoff(args, time.Now())
+		if err != nil {
+			return err.Error(), true
+		}
+		if cutoff != "" {
+			if args["page_size"] == nil {
+				maxItems = maxListPageSize
+			}
+			return executeDueTodoList(ctx, cfg, mcpKey, acc, name, resolvedPath, cutoff, pageNum, maxItems)
+		}
 	}
 
 	var bodyBytes []byte
@@ -1167,7 +1162,7 @@ func executeMCPTool(
 		bodyBytes = encoded
 	}
 
-	return callTowerForMCP(ctx, cfg, mcpKey, acc, name, spec.Method, resolvedPath, queryVals.Encode(), bodyBytes, pageNum, maxItems, localSlice)
+	return callTowerForMCP(ctx, cfg, mcpKey, acc, name, spec.Method, resolvedPath, queryVals.Encode(), bodyBytes, pageNum, maxItems, localSlice, nil)
 }
 
 func parsePositivePage(raw string) int {
@@ -1231,6 +1226,16 @@ func normalizeListQuery(method, apiPath, rawQuery string) (string, int) {
 		return rawQuery, 0
 	}
 
+	if isEvents {
+		limit := clampPageSize(cmp.Or(vals.Get("page[size]"), vals.Get("limit"), vals.Get("per_page")))
+		vals.Del("page[size]")
+		vals.Del("per_page")
+		vals.Del("page[number]")
+		vals.Del("page")
+		vals.Set("limit", strconv.Itoa(limit))
+		return vals.Encode(), limit
+	}
+
 	mutated := false
 	limit := 0
 	if ps := vals.Get("page[size]"); ps != "" {
@@ -1253,15 +1258,13 @@ func normalizeListQuery(method, apiPath, rawQuery string) (string, int) {
 		if limit <= 0 {
 			limit = defaultListPageSize
 		}
-		if !isEvents {
-			if vals.Get("page[number]") == "" && vals.Get("page") == "" {
-				vals.Set("page[number]", "1")
-				mutated = true
-			}
-			if vals.Get("page[size]") == "" && vals.Get("per_page") == "" {
-				vals.Set("page[size]", strconv.Itoa(limit))
-				mutated = true
-			}
+		if vals.Get("page[number]") == "" && vals.Get("page") == "" {
+			vals.Set("page[number]", "1")
+			mutated = true
+		}
+		if vals.Get("page[size]") == "" && vals.Get("per_page") == "" {
+			vals.Set("page[size]", strconv.Itoa(limit))
+			mutated = true
 		}
 	}
 	if mutated {
@@ -1277,50 +1280,38 @@ func capJSONListBytes(respBytes []byte, page, maxItems int, localSlice bool) []b
 	if page < 1 {
 		page = 1
 	}
-	trimmed := bytes.TrimSpace(respBytes)
-	if len(trimmed) == 0 {
-		return respBytes
-	}
-	if trimmed[0] == '[' {
-		var arr []any
-		if json.Unmarshal(trimmed, &arr) == nil && (len(arr) > maxItems || (localSlice && page > 1)) {
-			sliced := slicePageItems(arr, page, maxItems, localSlice)
-			if out, err := json.Marshal(sliced); err == nil {
-				return out
-			}
-		}
-		return respBytes
-	}
-	if trimmed[0] != '{' {
-		return respBytes
-	}
-	var doc map[string]any
-	if json.Unmarshal(trimmed, &doc) != nil {
-		return respBytes
-	}
-	dataSlice, ok := doc["data"].([]any)
-	if !ok {
+	doc, items := decodeMCPList(respBytes)
+	if items == nil {
 		return respBytes
 	}
 	_, hasServerLinks := doc["links"]
-	useOffset := localSlice || (!hasServerLinks && page > 1 && len(dataSlice) > maxItems)
-	if len(dataSlice) <= maxItems && (!useOffset || page == 1) {
+	useOffset := localSlice || (!hasServerLinks && len(items) > maxItems)
+	if len(items) <= maxItems && (!useOffset || page == 1) {
 		return respBytes
 	}
-	origCount := len(dataSlice)
-	sliced := slicePageItems(dataSlice, page, maxItems, useOffset)
+	sliced := slicePageItems(items, page, maxItems, useOffset)
+	if bytes.TrimSpace(respBytes)[0] == '[' {
+		out, _ := json.Marshal(sliced)
+		return out
+	}
 	doc["data"] = sliced
 	meta, _ := doc["meta"].(map[string]any)
 	if meta == nil {
 		meta = map[string]any{}
 	}
-	meta["truncated"] = origCount > len(sliced)
 	meta["page"] = page
 	meta["page_size"] = maxItems
 	meta["returned"] = len(sliced)
-	meta["original_count"] = origCount
+	meta["original_count"] = len(items)
 	if useOffset {
-		meta["has_more"] = page*maxItems < origCount
+		if page < (len(items)+maxItems-1)/maxItems {
+			meta["has_more"] = true
+			meta["next_page"] = page + 1
+		} else if _, known := meta["has_more"]; !known {
+			meta["has_more"] = nil
+		}
+	} else {
+		meta["truncated"] = true
 	}
 	doc["meta"] = meta
 	if out, err := json.Marshal(doc); err == nil {
@@ -1336,10 +1327,10 @@ func slicePageItems(items []any, page, pageSize int, useOffset bool) []any {
 		}
 		return items[:pageSize]
 	}
-	start := (page - 1) * pageSize
-	if start >= len(items) {
+	if page-1 >= (len(items)+pageSize-1)/pageSize {
 		return []any{}
 	}
+	start := (page - 1) * pageSize
 	end := start + pageSize
 	if end > len(items) {
 		end = len(items)
@@ -1356,33 +1347,60 @@ func callTowerForMCP(
 	bodyBytes []byte,
 	page, maxItems int,
 	localSlice bool,
+	rawOutput *rawMCPOutput,
 ) (string, bool) {
 	if teamWriteDenied(ctx, cfg, acc.AccessToken, method, apiPath) {
-		return "HTTP 403: " + renameDenied, true
+		return fmt.Sprintf("%s %s 返回 HTTP 403: %s", method, apiPath, renameDenied), true
 	}
 	if method == http.MethodDelete && !isSafeTodoStateDelete(apiPath) {
 		if cfg.Store == nil || !cfg.Store.GetSettings().AllowMCPDelete {
-			return "服务端已启用硬删除保护：本次删除请求未发送到 Tower。AgentsTower 系统管理员可在「成员管理」中开启「允许 MCP 硬删除」，开启后由 Tower 校验目标资源的删除权限。", true
+			return fmt.Sprintf("%s %s：服务端已启用硬删除保护。AgentsTower 系统管理员可在「成员管理」中开启「允许 MCP 硬删除」，开启后由 Tower 校验目标资源的删除权限。", method, apiPath), true
 		}
 	}
-	statusCode, respBytes, err := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, method, apiPath, rawQuery, bodyBytes)
+	var statusCode int
+	var respBytes []byte
+	var err error
+	switch tool {
+	case "list_member_assigned_uncompleted_todos", "list_member_created_uncompleted_todos":
+		statusCode, respBytes, err = loadMemberUncompletedTodos(ctx, cfg, mcpKey, acc, apiPath)
+	default:
+		statusCode, respBytes, err = doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, method, apiPath, rawQuery, bodyBytes)
+	}
 	if err != nil {
-		return "请求 Tower API 失败: " + err.Error(), true
+		return towerMCPError(method, apiPath, statusCode, respBytes, err), true
 	}
 	if statusCode >= 200 && statusCode < 300 && maxItems > 0 {
-		respBytes = capJSONListBytes(respBytes, page, maxItems, localSlice)
+		switch {
+		case tool == "raw_request":
+			respBytes = capJSONListBytes(respBytes, page, maxItems, localSlice)
+		case tool == "list_events":
+			cursorQuery, _ := url.ParseQuery(rawQuery)
+			respBytes = paginateMCPList(respBytes, page, maxItems, false, cursorQuery)
+		default:
+			if tool == "list_member_assigned_todos" || tool == "list_member_created_todos" {
+				respBytes, _ = unwrapMemberTodoList(respBytes)
+				if _, rows := decodeMCPList(respBytes); rows == nil {
+					return "Tower 返回的成员任务关系格式无效或超出响应大小限制", true
+				}
+			}
+			respBytes = paginateMCPList(respBytes, page, maxItems, localSlice, nil)
+		}
 	}
 
 	if statusCode >= 400 {
-		return fmt.Sprintf("Tower API 返回错误 HTTP %d:\n%s", statusCode, agentText(respBytes)), true
+		return towerMCPError(method, apiPath, statusCode, respBytes, nil), true
 	}
 	if len(bytes.TrimSpace(respBytes)) == 0 {
 		return fmt.Sprintf("操作成功 (HTTP %d)", statusCode), false
 	}
-	if tool != "raw_request" {
-		return resultProfiles[tool].text(compactTowerBody(respBytes, tool)), false
+	if rawOutput != nil {
+		text, failed := rawOutput.text(respBytes)
+		if failed {
+			return fmt.Sprintf("%s %s：%s", method, apiPath, text), true
+		}
+		return text, false
 	}
-	return agentText(respBytes), false
+	return resultProfiles[tool].text(compactTowerBody(respBytes, tool)), false
 }
 
 func doTowerHTTPWithRefresh(
@@ -1438,11 +1456,20 @@ func doTowerHTTP(
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	respBytes, err := readTowerResponse(resp.Body)
 	if err != nil {
 		return resp.StatusCode, nil, err
 	}
 	return resp.StatusCode, respBytes, nil
+}
+
+func readTowerResponse(reader io.Reader) ([]byte, error) {
+	const maxResponseSize = 2 << 20
+	body, err := io.ReadAll(io.LimitReader(reader, maxResponseSize+1))
+	if err == nil && len(body) > maxResponseSize {
+		return nil, errors.New("Tower 响应超过 2 MiB，无法读取完整结果")
+	}
+	return body, err
 }
 
 func extractJSONAPIDataItems(raw []byte) []map[string]any {
@@ -1462,14 +1489,12 @@ func executeMyTodoOverview(
 	acc *StoredAccount,
 	args map[string]any,
 ) (string, bool) {
+	const maxOverviewTeams = 10
 	targetTeamID := stringifyArg(args["team_id"])
 	includeCreated := strings.EqualFold(stringifyArg(args["include_created"]), "true")
 	limit := clampPageSize(stringifyArg(args["page_size"]))
 
-	type teamEntry struct {
-		ID   string
-		Name string
-	}
+	type teamEntry struct{ ID, Name string }
 	var teams []teamEntry
 	if targetTeamID != "" {
 		teams = []teamEntry{{ID: targetTeamID}}
@@ -1481,87 +1506,143 @@ func executeMyTodoOverview(
 		if code >= 400 {
 			return fmt.Sprintf("查询团队列表返回 HTTP %d:\n%s", code, agentText(body)), true
 		}
-		for _, item := range extractJSONAPIDataItems(body) {
-			id, _ := item["id"].(string)
+		_, items := decodeMCPList(body)
+		if items == nil {
+			return "Tower 团队列表响应缺少有效 data 列表", true
+		}
+		for _, item := range items {
+			team, _ := item.(map[string]any)
+			id := stringifyArg(team["id"])
 			if id == "" {
-				continue
+				return "Tower 团队列表响应缺少团队 ID", true
 			}
-			name := id
-			if attrs, ok := item["attributes"].(map[string]any); ok {
-				if n, ok := attrs["name"].(string); ok && n != "" {
-					name = n
-				}
+			attrs, _ := team["attributes"].(map[string]any)
+			name := stringifyArg(attrs["name"])
+			if name == "" {
+				name = id
 			}
 			teams = append(teams, teamEntry{ID: id, Name: name})
-			if len(teams) >= 10 {
-				break
-			}
 		}
 	}
 
+	teamsAvailable := len(teams)
+	if teamsAvailable > maxOverviewTeams {
+		teams = teams[:maxOverviewTeams]
+	}
+	teamsSkipped := teamsAvailable - len(teams)
 	teamResults := make([]map[string]any, 0, len(teams))
-	totalAssigned := 0
-	totalCreated := 0
+	type todoTotals struct {
+		total, returned int
+		known           bool
+	}
+	assigned := todoTotals{known: teamsSkipped == 0}
+	created := todoTotals{known: teamsSkipped == 0}
 
+	loadTodos := func(entry map[string]any, memberID, list string, totals *todoTotals) {
+		path := "/api/v1/members/" + url.PathEscape(memberID) + "/" + list + "_todos"
+		code, body, err := loadMemberUncompletedTodos(ctx, cfg, mcpKey, acc, path)
+		if err != nil || code < 200 || code >= 300 {
+			totals.known = false
+			entry[list+"_error"] = overviewUpstreamError(code, err)
+			return
+		}
+		doc, items := decodeMCPList(body)
+		if items == nil {
+			totals.known = false
+			entry[list+"_error"] = "Tower 返回的任务列表格式无效"
+			return
+		}
+		todos := make([]map[string]any, 0, min(len(items), limit))
+		for _, item := range items[:min(len(items), limit)] {
+			todo, ok := item.(map[string]any)
+			if !ok {
+				totals.known = false
+				entry[list+"_error"] = "Tower 返回的任务格式无效"
+				return
+			}
+			todos = append(todos, todo)
+		}
+		entry[list+"_todos"] = compactTodoItems(todos)
+		entry[list+"_returned"] = len(todos)
+		totals.returned += len(todos)
+
+		meta, _ := doc["meta"].(map[string]any)
+		total, known := mcpListTotal(meta)
+		if warning := meta["scope_warning"]; warning != nil {
+			entry[list+"_warning"] = warning
+		}
+		entry[list+"_count"] = "未知"
+		if known {
+			entry[list+"_count"] = total
+			totals.total += total
+		} else {
+			totals.known = false
+		}
+	}
+
+	teamsFailed := 0
 	for _, tm := range teams {
+		entry := map[string]any{"team_id": tm.ID, "team_name": tm.Name}
 		mPath := "/api/v1/teams/" + url.PathEscape(tm.ID) + "/member"
 		mCode, mBody, err := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, mPath, "", nil)
-		if err != nil || mCode >= 400 {
-			teamResults = append(teamResults, map[string]any{
-				"team_id":   tm.ID,
-				"team_name": tm.Name,
-				"error":     fmt.Sprintf("获取团队成员身份失败 (HTTP %d)", mCode),
-			})
-			continue
-		}
 		var memberDoc struct {
 			Data struct {
 				ID         string         `json:"id"`
 				Attributes map[string]any `json:"attributes"`
 			} `json:"data"`
 		}
-		if json.Unmarshal(mBody, &memberDoc) != nil || memberDoc.Data.ID == "" {
-			continue
+		switch {
+		case err != nil || mCode >= 400:
+			entry["error"] = "获取团队成员身份失败：" + overviewUpstreamError(mCode, err)
+		case json.Unmarshal(mBody, &memberDoc) != nil || memberDoc.Data.ID == "":
+			entry["error"] = "Tower 成员响应缺少有效成员 ID"
+		default:
+			memberID := memberDoc.Data.ID
+			entry["member_id"] = memberID
+			entry["nickname"] = memberDoc.Data.Attributes["nickname"]
+			loadTodos(entry, memberID, "assigned_uncompleted", &assigned)
+			if includeCreated {
+				loadTodos(entry, memberID, "created_uncompleted", &created)
+			}
 		}
-		memberID := memberDoc.Data.ID
-		nickname, _ := memberDoc.Data.Attributes["nickname"].(string)
-		q := fmt.Sprintf("page[number]=1&page[size]=%d", limit)
-
-		aPath := "/api/v1/members/" + url.PathEscape(memberID) + "/assigned_uncompleted_todos"
-		_, aBody, _ := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, aPath, q, nil)
-		assignedItems := extractJSONAPIDataItems(capJSONListBytes(aBody, 1, limit, false))
-		totalAssigned += len(assignedItems)
-
-		entry := map[string]any{
-			"team_id":                    tm.ID,
-			"team_name":                  tm.Name,
-			"member_id":                  memberID,
-			"nickname":                   nickname,
-			"assigned_uncompleted_count": len(assignedItems),
-			"assigned_uncompleted_todos": compactTodoItems(assignedItems),
+		if entry["error"] != nil {
+			assigned.known, created.known = false, false
 		}
-		if includeCreated {
-			cPath := "/api/v1/members/" + url.PathEscape(memberID) + "/created_uncompleted_todos"
-			_, cBody, _ := doTowerHTTPWithRefresh(ctx, cfg, mcpKey, acc, http.MethodGet, cPath, q, nil)
-			createdItems := extractJSONAPIDataItems(capJSONListBytes(cBody, 1, limit, false))
-			totalCreated += len(createdItems)
-			entry["created_uncompleted_count"] = len(createdItems)
-			entry["created_uncompleted_todos"] = compactTodoItems(createdItems)
+		if entry["error"] != nil || entry["assigned_uncompleted_error"] != nil || entry["created_uncompleted_error"] != nil {
+			teamsFailed++
 		}
 		teamResults = append(teamResults, entry)
 	}
 
 	summary := map[string]any{
-		"teams_checked":              len(teamResults),
-		"page_size":                  limit,
-		"total_assigned_uncompleted": totalAssigned,
-		"teams":                      teamResults,
+		"teams_checked":                 len(teamResults),
+		"teams_available":               teamsAvailable,
+		"teams_skipped":                 teamsSkipped,
+		"teams_failed":                  teamsFailed,
+		"page_size":                     limit,
+		"total_assigned_uncompleted":    "未知",
+		"returned_assigned_uncompleted": assigned.returned,
+		"teams":                         teamResults,
+	}
+	if assigned.known {
+		summary["total_assigned_uncompleted"] = assigned.total
 	}
 	if includeCreated {
-		summary["total_created_uncompleted"] = totalCreated
+		summary["total_created_uncompleted"] = "未知"
+		summary["returned_created_uncompleted"] = created.returned
+		if created.known {
+			summary["total_created_uncompleted"] = created.total
+		}
 	}
 	out, _ := json.Marshal(summary)
 	return resultProfiles["my_todo_overview"].compositeText(out), false
+}
+
+func overviewUpstreamError(code int, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return fmt.Sprintf("Tower API 返回 HTTP %d", code)
 }
 
 func executeUploadFile(

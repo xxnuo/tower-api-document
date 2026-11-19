@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -12,7 +13,7 @@ import (
 // Lists are used to choose a resource. Detail calls retain its full attributes.
 var listFields = map[string]string{
 	"teams": "name", "projects": "name is_archived", "todolists": "name is_archived is_default",
-	"members": "nickname role is_active", "todos": "content team_wide_id is_completed completed due_at priority",
+	"members": "nickname role is_active", "todos": "content team_wide_id is_completed completed created_at updated_at due_at priority",
 	"topics": "subject title created_at", "messages": "subject title created_at",
 	"uploads": "name filename", "attachments": "filename byte_size content_type url",
 	"comments": "content created_at", "events": "action title ancestor_type ancestor_name created_at",
@@ -111,12 +112,21 @@ func compactTowerBody(raw []byte, tool string) any {
 		items := make([]any, 0, len(d))
 		for _, v := range d {
 			if r, ok := v.(map[string]any); ok {
-				v = resultProfiles[tool].selectFields(compactResource(r, false, included))
+				out := compactResource(r, false, included)
+				if tool == "list_todos" || (strings.HasPrefix(tool, "list_member_") && strings.HasSuffix(tool, "_todos")) {
+					addTodoListDates(out, r)
+				}
+				v = resultProfiles[tool].selectFields(out)
 			}
 			items = append(items, v)
 		}
 		out := map[string]any{"items": items}
 		if m, ok := doc["meta"]; ok {
+			if meta, ok := m.(map[string]any); ok {
+				if more, exists := meta["has_more"]; exists && more == nil {
+					meta["has_more"] = "未知"
+				}
+			}
 			out["meta"] = m
 		}
 		if links, ok := doc["links"].(map[string]any); ok && links["next"] != nil {
@@ -130,6 +140,7 @@ func compactTowerBody(raw []byte, tool string) any {
 func compactTodoItems(rows []map[string]any) []map[string]any {
 	for i, r := range rows {
 		rows[i] = compactResource(r, true, nil)
+		addTodoListDates(rows[i], r)
 	}
 	return rows
 }
@@ -169,6 +180,11 @@ func renderAgentValue(value any, preferred ...string) string {
 		lines := make([]string, 0, len(keys))
 		for _, k := range keys {
 			field := renderAgentValue(v[k])
+			if raw, ok := v[k].(string); ok && (strings.HasSuffix(k, "_at") || k == "datetime" || k == "result_time") {
+				if date := towerDateValue(raw); date != "" {
+					field = date
+				}
+			}
 			switch v[k].(type) {
 			case map[string]any, []any:
 				lines = append(lines, k+"：\n  "+strings.ReplaceAll(field, "\n", "\n  "))
@@ -189,6 +205,7 @@ func renderAgentValue(value any, preferred ...string) string {
 			heading := ""
 			if r, ok := item.(map[string]any); ok && r["id"] != nil {
 				heading = "ID " + fmt.Sprint(r["id"])
+				r = maps.Clone(r)
 				delete(r, "id")
 				for _, k := range []string{"name", "nickname", "subject", "title", "content", "filename", "desc"} {
 					if s, ok := r[k].(string); ok && s != "" && !strings.ContainsAny(s, "\r\n") {

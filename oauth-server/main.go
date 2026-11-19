@@ -871,13 +871,15 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 		}
 		defer resp.Body.Close()
 
-		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		respBytes, err := readTowerResponse(resp.Body)
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "读取响应失败: " + err.Error()})
 			return
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 && maxItems > 0 {
-			respBytes = capJSONListBytes(respBytes, 1, maxItems, false)
+			q, _ := url.ParseQuery(normalizedQuery)
+			page := parsePositivePage(cmp.Or(q.Get("page[number]"), q.Get("page")))
+			respBytes = capJSONListBytes(respBytes, page, maxItems, false)
 		}
 
 		var parsed any

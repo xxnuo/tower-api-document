@@ -602,8 +602,10 @@ func parseSearchItems(page string) []map[string]any {
 				}
 			case n.Data == "a" && strings.Contains(attr(n, "class"), "attachment-name"):
 				link = n
-			case attr(n, "class") == "result-time":
-				item["time"] = attr(n, "title")
+			case strings.Contains(" "+attr(n, "class")+" ", " result-time "):
+				if raw := towerDateValue(attr(n, "data-readable-time")); len(raw) > len(time.DateOnly) {
+					item["result_time"] = raw
+				}
 			}
 		}
 		if link == nil {
