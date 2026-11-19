@@ -54,7 +54,7 @@ docker run -d --name agents-tower -p 8888:8888 -v "$(pwd)/data:/app/data" --env-
 ```json
 {
   "mcpServers": {
-    "agents-tower": {
+    "tower": {
       "type": "http",
       "url": "http://localhost:8888/mcp",
       "headers": {

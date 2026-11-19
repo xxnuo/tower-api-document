@@ -12,7 +12,7 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 ```json
 {
   "mcpServers": {
-    "agents-tower": {
+    "tower": {
       "type": "http",
       "url": "{{MCP_URL}}",
       "headers": {

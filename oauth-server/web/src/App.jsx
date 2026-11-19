@@ -641,7 +641,7 @@ export default function App() {
   const mcpConfigSnippet = JSON.stringify(
     {
       mcpServers: {
-        "agents-tower": {
+        tower: {
           type: "http",
           url: mcpServerURL,
           headers: {
