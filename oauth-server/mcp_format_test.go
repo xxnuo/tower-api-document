@@ -9,7 +9,7 @@ import (
 
 func TestCompactTodoList(t *testing.T) {
 	raw := []byte(`{"data":[{"id":"t","type":"todos","attributes":{"content":"task","desc":"long body","is_completed":false},"relationships":{"assignee":{"data":{"type":"members","id":"m"}}}}],"included":[{"id":"m","type":"members","attributes":{"nickname":"Alice","gavatar":"image"}}],"links":{"next":"page2"}}`)
-	out, err := json.Marshal(compactTowerBody(raw, "tower_list_todos"))
+	out, err := json.Marshal(compactTowerBody(raw, "list_todos"))
 	if err != nil || string(out) != `{"items":[{"assignee":{"id":"m","nickname":"Alice"},"content":"task","id":"t","is_completed":false}],"next":"page2"}` {
 		t.Fatal(string(out), err)
 	}
@@ -23,6 +23,9 @@ func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
 	for _, d := range defs {
 		name := d["name"].(string)
 		t.Run(name, func(t *testing.T) {
+			if strings.HasPrefix(name, "tower_") {
+				t.Fatal("unexpected tool prefix")
+			}
 			p := resultProfiles[name]
 			if p.heading == "" || p.fields == "" {
 				t.Fatal("missing result profile")
@@ -50,14 +53,37 @@ func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
 func TestMemberTodoViews(t *testing.T) {
 	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"周五","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}}}}]}`)
 	for _, tc := range []struct{ tool, want, omit string }{
-		{"tower_list_member_created_uncompleted_todos", "M1", "周一"},
-		{"tower_list_member_assigned_uncompleted_todos", "周五", "M1"},
-		{"tower_list_member_assigned_completed_todos", "周一", "周五"},
+		{"list_member_created_uncompleted_todos", "M1", "周一"},
+		{"list_member_assigned_uncompleted_todos", "周五", "M1"},
+		{"list_member_assigned_completed_todos", "周一", "周五"},
 	} {
 		p := resultProfiles[tc.tool]
 		text := p.text(compactTowerBody(raw, tc.tool))
 		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.omit) {
 			t.Errorf("%s: %s", tc.tool, text)
 		}
+	}
+}
+
+func TestLinkedDetailResults(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       []string
+	}{
+		{"get_topic", `{"data":{"id":"discussion","type":"topics","attributes":{"title":"发布计划","content":"周五上线"},"relationships":{"comments":{"data":[{"type":"comments","id":"reply"}]}}},"included":[{"type":"comments","id":"reply","attributes":{"content":"已确认"}}]}`, []string{"ID：discussion", "标题：发布计划", "内容：周五上线", "已确认"}},
+		{"get_upload", `{"data":{"id":"file","type":"uploads","attributes":{"name":"会议记录"},"relationships":{"attachment":{"data":{"type":"attachments","id":"attachment-id"}}}},"included":[{"type":"attachments","id":"attachment-id","attributes":{"filename":"notes.md","byte_size":20,"icon_url":"discarded-thumbnail"}}]}`, []string{"附件：", "ID：attachment-id", "文件名：notes.md", "字节数：20"}},
+		{"get_attachment_url", `{"url":"https://example.org/file?signature=a%2Bb&expires=123"}`, []string{"地址：https://example.org/file?signature=a%2Bb&expires=123"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text := resultProfiles[tc.name].text(compactTowerBody([]byte(tc.body), tc.name))
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Fatalf("missing %q: %s", want, text)
+				}
+			}
+			if strings.Contains(text, "discarded-thumbnail") {
+				t.Fatal(text)
+			}
+		})
 	}
 }

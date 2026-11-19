@@ -18,8 +18,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 function resolveToolGroup(name) {
-  if (name === "tower_get_current_user") return "用户";
-  if (name.startsWith("tower_") && name.includes("_team") && !name.includes("member")) return "团队";
+  if (name === "get_current_user") return "用户";
+  if (name.includes("_team") && !name.includes("member")) return "团队";
   if (name.includes("_project") && !name.includes("time_log")) return "项目";
   if (name.includes("_member")) return "成员";
   if (name.includes("_todolist")) return "任务清单";
@@ -59,7 +59,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   const [search, setSearch] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
-  const [selectedName, setSelectedName] = useState("tower_get_current_user");
+  const [selectedName, setSelectedName] = useState("get_current_user");
 
   const [inputMode, setInputMode] = useState("form");
   const [formValues, setFormValues] = useState({});
@@ -116,13 +116,13 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
   const harvestFromToolOutput = useCallback((toolName, opts) => {
     if (opts.length === 0) return;
     let targetKey = "";
-    if (toolName === "tower_list_teams") targetKey = "team_id";
-    else if (toolName === "tower_list_projects") targetKey = "project_id";
-    else if (toolName === "tower_list_team_members" || toolName === "tower_list_project_members") targetKey = "member_id";
-    else if (toolName === "tower_list_todolists") targetKey = "todolist_id";
-    else if (toolName.startsWith("tower_list_") && toolName.endsWith("_todos")) targetKey = "todo_id";
-    else if (toolName === "tower_list_topics") targetKey = "topic_id";
-    else if (toolName === "tower_list_uploads") targetKey = "upload_id";
+    if (toolName === "list_teams") targetKey = "team_id";
+    else if (toolName === "list_projects") targetKey = "project_id";
+    else if (toolName === "list_team_members" || toolName === "list_project_members") targetKey = "member_id";
+    else if (toolName === "list_todolists") targetKey = "todolist_id";
+    else if (toolName.startsWith("list_") && toolName.endsWith("_todos")) targetKey = "todo_id";
+    else if (toolName === "list_topics") targetKey = "topic_id";
+    else if (toolName === "list_uploads") targetKey = "upload_id";
     else if (toolName.endsWith("_time_logs")) targetKey = "time_log_id";
     if (!targetKey) return;
 
@@ -148,7 +148,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           if (signal?.aborted || result?.isError || !text) return;
           const { options: pageOptions, next } = parseToolOptions(text);
           pageOptions.forEach((option) => options.set(option.id, option));
-          if (toolName !== "tower_list_team_members" || !next || nextLinks.has(next)) break;
+          if (toolName !== "list_team_members" || !next || nextLinks.has(next)) break;
           nextLinks.add(next);
         }
         harvestFromToolOutput(toolName, [...options.values()]);
@@ -223,22 +223,22 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   useEffect(() => {
     if (!effectiveKey || !serverMeta) return;
-    fetchToolOptions("team_id", "tower_list_teams");
+    fetchToolOptions("team_id", "list_teams");
   }, [effectiveKey, Boolean(serverMeta), fetchToolOptions]);
 
   useEffect(() => {
     const teamId = String(formValues.team_id || "").trim();
     if (!effectiveKey || !serverMeta || !teamId) return;
-    fetchToolOptions("project_id", "tower_list_projects", { team_id: teamId });
+    fetchToolOptions("project_id", "list_projects", { team_id: teamId });
     const membersRequest = new AbortController();
-    fetchToolOptions("member_id", "tower_list_team_members", { team_id: teamId }, membersRequest.signal);
+    fetchToolOptions("member_id", "list_team_members", { team_id: teamId }, membersRequest.signal);
     return () => membersRequest.abort();
   }, [effectiveKey, Boolean(serverMeta), formValues.team_id, fetchToolOptions]);
 
   useEffect(() => {
     const projectId = String(formValues.project_id || "").trim();
     if (!effectiveKey || !serverMeta || !projectId) return;
-    fetchToolOptions("todolist_id", "tower_list_todolists", { project_id: projectId });
+    fetchToolOptions("todolist_id", "list_todolists", { project_id: projectId });
   }, [effectiveKey, Boolean(serverMeta), formValues.project_id, fetchToolOptions]);
 
   const activeTool = useMemo(
@@ -250,7 +250,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
     const q = search.trim().toLowerCase();
     const filtered = tools.filter((tool) => {
       const ann = tool.annotations || {};
-      const isDanger = Boolean(ann.destructiveHint && tool.name !== "tower_raw_request");
+      const isDanger = Boolean(ann.destructiveHint && tool.name !== "raw_request");
       const isRead = Boolean(ann.readOnlyHint);
       if (modeFilter === "read" && !isRead) return false;
       if (modeFilter === "write" && (isRead || isDanger)) return false;
@@ -380,7 +380,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
 
   const isActiveToolDangerous = useMemo(() => {
     if (!activeTool) return false;
-    if (activeTool.name === "tower_raw_request") {
+    if (activeTool.name === "raw_request") {
       if (inputMode === "json") {
         const parsed = tryParseJSON(rawArgsText);
         return String(parsed.val?.method || "").toUpperCase() === "DELETE";
@@ -415,7 +415,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
           return next;
         });
         const currentTeamId = String(formValues.team_id || "").trim();
-        if (activeTool.name !== "tower_list_team_members" || argsObj.team_id !== currentTeamId) {
+        if (activeTool.name !== "list_team_members" || argsObj.team_id !== currentTeamId) {
           harvestFromToolOutput(activeTool.name, parseToolOptions(text).options);
         }
       }
@@ -569,7 +569,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                 {group.items.map((tool) => {
                   const active = activeTool?.name === tool.name;
                   const ann = tool.annotations || {};
-                  const isDanger = Boolean(ann.destructiveHint && tool.name !== "tower_raw_request");
+                  const isDanger = Boolean(ann.destructiveHint && tool.name !== "raw_request");
                   const isRead = Boolean(ann.readOnlyHint);
                   const unavail = unavailableTools[`${keyTag}::${tool.name}`];
                   const badgeCls = isDanger
@@ -738,20 +738,20 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                       field.name === "content";
                     const canReloadOpt =
                       field.name === "team_id"
-                        ? () => fetchToolOptions("team_id", "tower_list_teams")
+                        ? () => fetchToolOptions("team_id", "list_teams")
                         : field.name === "todo_id" && String(formValues.todolist_id || "").trim()
                           ? () =>
-                              fetchToolOptions("todo_id", "tower_list_todos", {
+                              fetchToolOptions("todo_id", "list_todos", {
                                 todolist_id: String(formValues.todolist_id).trim(),
                               })
                           : field.name === "topic_id" && String(formValues.project_id || "").trim()
                             ? () =>
-                                fetchToolOptions("topic_id", "tower_list_topics", {
+                                fetchToolOptions("topic_id", "list_topics", {
                                   project_id: String(formValues.project_id).trim(),
                                 })
                             : field.name === "upload_id" && String(formValues.project_id || "").trim()
                               ? () =>
-                                  fetchToolOptions("upload_id", "tower_list_uploads", {
+                                  fetchToolOptions("upload_id", "list_uploads", {
                                     project_id: String(formValues.project_id).trim(),
                                   })
                               : null;

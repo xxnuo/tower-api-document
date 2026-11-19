@@ -403,5 +403,5 @@ func executeSearchTodos(
 	if status >= 400 {
 		return agentText(out), true
 	}
-	return resultProfiles["tower_search_todos"].compositeText(out), false
+	return resultProfiles["search_todos"].compositeText(out), false
 }

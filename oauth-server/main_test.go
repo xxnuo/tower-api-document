@@ -724,12 +724,12 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	listReq.Header.Set("Authorization", "Bearer "+acc.MCPAPIKey)
 	listRec := httptest.NewRecorder()
 	mux.ServeHTTP(listRec, listReq)
-	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"tower_create_todo"`) {
+	if listRec.Code != http.StatusOK || !strings.Contains(listRec.Body.String(), `"create_todo"`) {
 		t.Fatalf("tools/list failed: %d %s", listRec.Code, listRec.Body.String())
 	}
 
 	// 5. tools/call GET with query parameter wire mapping (page -> page[number])
-	callListReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1","page":2,"completed_todo":true}}}`))
+	callListReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_todos","arguments":{"todolist_id":"tl-1","page":2,"completed_todo":true}}}`))
 	callListReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	callListRec := httptest.NewRecorder()
 	mux.ServeHTTP(callListRec, callListReq)
@@ -738,7 +738,7 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	}
 
 	// 6. tools/call POST with envelope + custom_fields merge
-	callCreateReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tower_create_todo","arguments":{"todolist_id":"tl-1","content":"Ship MCP","custom_fields":{"select_custom":"v1"}}}}`))
+	callCreateReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"create_todo","arguments":{"todolist_id":"tl-1","content":"Ship MCP","custom_fields":{"select_custom":"v1"}}}}`))
 	callCreateReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	callCreateRec := httptest.NewRecorder()
 	mux.ServeHTTP(callCreateRec, callCreateReq)
@@ -889,7 +889,7 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	mux := newMux(cfg)
 
 	// 1. Default MCP list call injects page[number]=1&page[size]=20 and caps 35 -> 20 items
-	req1 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1"}}}`))
+	req1 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_todos","arguments":{"todolist_id":"tl-1"}}}`))
 	req1.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec1 := httptest.NewRecorder()
 	mux.ServeHTTP(rec1, req1)
@@ -902,7 +902,7 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	}
 
 	// 2. Oversized page_size=500 is clamped to 50
-	req2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_list_todos","arguments":{"todolist_id":"tl-1","page":3,"page_size":500}}}`))
+	req2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_todos","arguments":{"todolist_id":"tl-1","page":3,"page_size":500}}}`))
 	req2.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec2 := httptest.NewRecorder()
 	mux.ServeHTTP(rec2, req2)
@@ -922,8 +922,8 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 		t.Fatalf("expected proxy clamped query, got %s", seenQueries[2])
 	}
 
-	// 4. Local-sliced list tools (like tower_list_projects) honor explicit page=2 & page_size=10
-	req4 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"tower_list_projects","arguments":{"team_id":"t1","page":2,"page_size":10}}}`))
+	// 4. Local-sliced list tools (like list_projects) honor explicit page=2 & page_size=10
+	req4 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_projects","arguments":{"team_id":"t1","page":2,"page_size":10}}}`))
 	req4.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec4 := httptest.NewRecorder()
 	mux.ServeHTTP(rec4, req4)
@@ -1024,9 +1024,9 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 	// 2. Register first user (admin)
 	adminCookie, _, _ := registerTestUser(t, mux, "admin1", "pass123")
 
-	// 3. Default MCP hard-delete protection blocks tower_delete_todo, but allows tower_complete_todo and tower_reopen_todo (non-destructive)
+	// 3. Default MCP hard-delete protection blocks delete_todo, but allows complete_todo and reopen_todo (non-destructive)
 	for _, def := range listMCPToolDefinitions() {
-		if def["name"] == "tower_complete_todo" || def["name"] == "tower_reopen_todo" || def["name"] == "tower_unassign_todo" {
+		if def["name"] == "complete_todo" || def["name"] == "reopen_todo" || def["name"] == "unassign_todo" {
 			ann, _ := def["annotations"].(map[string]any)
 			if ann["destructiveHint"] == true {
 				t.Fatalf("expected %s destructiveHint=false, got %v", def["name"], ann)
@@ -1034,7 +1034,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 		}
 	}
 
-	compReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_complete_todo","arguments":{"todo_id":"t1"}}}`))
+	compReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"complete_todo","arguments":{"todo_id":"t1"}}}`))
 	compReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	compRec := httptest.NewRecorder()
 	mux.ServeHTTP(compRec, compReq)
@@ -1042,7 +1042,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 		t.Fatalf("expected complete_todo allowed, got: %s", compRec.Body.String())
 	}
 
-	delReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tower_delete_todo","arguments":{"todo_id":"t1"}}}`))
+	delReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"delete_todo","arguments":{"todo_id":"t1"}}}`))
 	delReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	delRec := httptest.NewRecorder()
 	mux.ServeHTTP(delRec, delReq)
@@ -1050,7 +1050,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 		t.Fatalf("expected hard delete blocked by default, got: %s", delRec.Body.String())
 	}
 
-	reopenReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_reopen_todo","arguments":{"todo_id":"t1"}}}`))
+	reopenReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reopen_todo","arguments":{"todo_id":"t1"}}}`))
 	reopenReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	reopenRec := httptest.NewRecorder()
 	mux.ServeHTTP(reopenRec, reopenReq)
@@ -1069,7 +1069,7 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 
 	// Hard delete now succeeds
 	delRec2 := httptest.NewRecorder()
-	delReq2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tower_delete_todo","arguments":{"todo_id":"t1"}}}`))
+	delReq2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"delete_todo","arguments":{"todo_id":"t1"}}}`))
 	delReq2.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	mux.ServeHTTP(delRec2, delReq2)
 	if strings.Contains(delRec2.Body.String(), `"isError":true`) {
@@ -1123,20 +1123,20 @@ func TestSecuritySettingsHardDeleteAndRateLimit(t *testing.T) {
 		t.Fatalf("expected 429 on 9th attempt, got %d", rateRec.Code)
 	}
 
-	// 8. Composite MCP tools: tower_my_todo_overview & tower_upload_file
-	ovReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"tower_my_todo_overview","arguments":{}}}`))
+	// 8. Composite MCP tools: my_todo_overview & upload_file
+	ovReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"my_todo_overview","arguments":{}}}`))
 	ovReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	ovRec := httptest.NewRecorder()
 	mux.ServeHTTP(ovRec, ovReq)
 	if ovRec.Code != http.StatusOK || !strings.Contains(ovRec.Body.String(), "todo-a1") || !strings.Contains(ovRec.Body.String(), "CoreTeam") {
-		t.Fatalf("tower_my_todo_overview failed: %d %s", ovRec.Code, ovRec.Body.String())
+		t.Fatalf("my_todo_overview failed: %d %s", ovRec.Code, ovRec.Body.String())
 	}
 
-	upReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"tower_upload_file","arguments":{"team_id":"team-1","project_id":"proj-1","filename":"note.md","content":"# Hello Tower"}}}`))
+	upReq := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"upload_file","arguments":{"team_id":"team-1","project_id":"proj-1","filename":"note.md","content":"# Hello Tower"}}}`))
 	upReq.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	upRec := httptest.NewRecorder()
 	mux.ServeHTTP(upRec, upReq)
 	if upRec.Code != http.StatusOK || !strings.Contains(upRec.Body.String(), "guid-oss-1") || !strings.Contains(upRec.Body.String(), "up-1") {
-		t.Fatalf("tower_upload_file failed: %d %s", upRec.Code, upRec.Body.String())
+		t.Fatalf("upload_file failed: %d %s", upRec.Code, upRec.Body.String())
 	}
 }

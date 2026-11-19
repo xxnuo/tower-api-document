@@ -80,32 +80,32 @@ func pBody(name, typ string, required bool, desc string) mcpParam {
 var towerMCPTools = []mcpToolSpec{
 	// 用户
 	{
-		Name: "tower_get_current_user", Title: "获取当前账号信息",
+		Name: "get_current_user", Title: "获取当前账号信息",
 		Desc:   "获取当前鉴权成员的 Tower 用户信息（ID、昵称、邮箱、头像）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/user",
 	},
 
 	// 团队
 	{
-		Name: "tower_list_teams", Title: "获取团队列表",
+		Name: "list_teams", Title: "获取团队列表",
 		Desc:   "获取当前成员加入的所有 Tower 团队列表（返回各团队 team_id 与名称）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams",
 		Params: []mcpParam{pLocalPage(), pLocalPageSize()},
 	},
 	{
-		Name: "tower_get_team", Title: "获取团队详情",
+		Name: "get_team", Title: "获取团队详情",
 		Desc:   "根据 team_id 获取指定 Tower 团队详情",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}",
 		Params: []mcpParam{pPath("team_id", "团队 ID")},
 	},
 	{
-		Name: "tower_create_team", Title: "创建团队",
+		Name: "create_team", Title: "创建团队",
 		Desc:   "创建一个新的 Tower 团队",
 		Method: http.MethodPost, PathTemplate: "/api/v1/teams", BodyEnvelope: "team",
 		Params: []mcpParam{pBody("name", "string", true, "新团队名称")},
 	},
 	{
-		Name: "tower_rename_team", Title: "更改团队名称",
+		Name: "rename_team", Title: "更改团队名称",
 		Desc:   "修改指定 Tower 团队的名称",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/teams/{team_id}", BodyEnvelope: "team",
 		Params: []mcpParam{
@@ -114,7 +114,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_get_team_resource", Title: "按团队资源编号查询资源",
+		Name: "get_team_resource", Title: "按团队资源编号查询资源",
 		Desc:   "根据团队 ID 与资源短编号查询对应 Tower 资源信息",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/resources/{resource_id}",
 		Params: []mcpParam{
@@ -125,19 +125,19 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 项目
 	{
-		Name: "tower_list_projects", Title: "获取团队项目列表",
+		Name: "list_projects", Title: "获取团队项目列表",
 		Desc:   "获取指定团队下的全部项目列表（返回各项目 project_id 与名称）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/projects",
 		Params: []mcpParam{pPath("team_id", "团队 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
-		Name: "tower_get_project", Title: "获取项目详情",
+		Name: "get_project", Title: "获取项目详情",
 		Desc:   "获取指定 Tower 项目的详细信息（包含关联清单等）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}",
 		Params: []mcpParam{pPath("project_id", "项目 ID")},
 	},
 	{
-		Name: "tower_create_project", Title: "创建项目",
+		Name: "create_project", Title: "创建项目",
 		Desc:   "在指定团队下创建新项目",
 		Method: http.MethodPost, PathTemplate: "/api/v1/teams/{team_id}/projects", BodyEnvelope: "project",
 		Params: []mcpParam{
@@ -150,7 +150,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_project", Title: "更新项目信息",
+		Name: "update_project", Title: "更新项目信息",
 		Desc:   "更新指定项目的名称、描述或成员列表",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/projects/{project_id}", BodyEnvelope: "project",
 		Params: []mcpParam{
@@ -161,13 +161,13 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_delete_project", Title: "删除项目",
+		Name: "delete_project", Title: "删除项目",
 		Desc:   "删除指定 Tower 项目（危险操作，会删除真实数据）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/projects/{project_id}",
 		Params: []mcpParam{pPath("project_id", "项目 ID")},
 	},
 	{
-		Name: "tower_list_project_members", Title: "获取项目成员",
+		Name: "list_project_members", Title: "获取项目成员",
 		Desc:   "获取指定项目的成员列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/members",
 		Params: []mcpParam{pPath("project_id", "项目 ID"), pPage(), pPageSize()},
@@ -175,55 +175,55 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 成员
 	{
-		Name: "tower_list_team_members", Title: "获取团队成员列表",
+		Name: "list_team_members", Title: "获取团队成员列表",
 		Desc:   "获取指定团队下的全部成员（返回各成员 member_id、昵称、角色等）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/members",
 		Params: []mcpParam{pPath("team_id", "团队 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_get_my_team_member", Title: "获取当前账号在团队中的成员信息",
+		Name: "get_my_team_member", Title: "获取当前账号在团队中的成员信息",
 		Desc:   "获取当前登录用户在指定团队中的成员档案（含对应的 member_id）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/member",
 		Params: []mcpParam{pPath("team_id", "团队 ID")},
 	},
 	{
-		Name: "tower_get_member", Title: "获取成员详情",
+		Name: "get_member", Title: "获取成员详情",
 		Desc:   "根据 member_id 获取成员详细信息",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}",
 		Params: []mcpParam{pPath("member_id", "成员 ID")},
 	},
 	{
-		Name: "tower_list_member_assigned_todos", Title: "获取指派给成员的全部任务",
+		Name: "list_member_assigned_todos", Title: "获取指派给成员的全部任务",
 		Desc:   "获取指派给指定成员的全部任务（含已完成和未完成）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_list_member_assigned_uncompleted_todos", Title: "获取指派给成员的未完成任务",
+		Name: "list_member_assigned_uncompleted_todos", Title: "获取指派给成员的未完成任务",
 		Desc:   "获取指派给指定成员且尚未完成的任务列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_uncompleted_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_list_member_assigned_completed_todos", Title: "获取指派给成员的已完成任务",
+		Name: "list_member_assigned_completed_todos", Title: "获取指派给成员的已完成任务",
 		Desc:   "获取指派给指定成员且已完成的任务列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_completed_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_list_member_created_todos", Title: "获取成员创建的全部任务",
+		Name: "list_member_created_todos", Title: "获取成员创建的全部任务",
 		Desc:   "获取由指定成员创建的全部任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_list_member_created_uncompleted_todos", Title: "获取成员创建的未完成任务",
+		Name: "list_member_created_uncompleted_todos", Title: "获取成员创建的未完成任务",
 		Desc:   "获取由指定成员创建且未完成的任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_uncompleted_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_list_member_created_completed_todos", Title: "获取成员创建的已完成任务",
+		Name: "list_member_created_completed_todos", Title: "获取成员创建的已完成任务",
 		Desc:   "获取由指定成员创建且已完成的任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/created_completed_todos",
 		Params: []mcpParam{pPath("member_id", "成员 ID"), pPage(), pPageSize()},
@@ -231,19 +231,19 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 任务清单
 	{
-		Name: "tower_list_todolists", Title: "获取项目任务清单列表",
+		Name: "list_todolists", Title: "获取项目任务清单列表",
 		Desc:   "获取指定项目下的所有任务清单（返回 todolist_id 与清单名称）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/todolists",
 		Params: []mcpParam{pPath("project_id", "项目 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
-		Name: "tower_get_todolist", Title: "获取任务清单详情",
+		Name: "get_todolist", Title: "获取任务清单详情",
 		Desc:   "获取指定任务清单的详细信息及其下属任务概览",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todolists/{todolist_id}",
 		Params: []mcpParam{pPath("todolist_id", "任务清单 ID")},
 	},
 	{
-		Name: "tower_create_todolist", Title: "创建任务清单",
+		Name: "create_todolist", Title: "创建任务清单",
 		Desc:   "在指定项目下新建任务清单",
 		Method: http.MethodPost, PathTemplate: "/api/v1/projects/{project_id}/todolists", BodyEnvelope: "todolist",
 		Params: []mcpParam{
@@ -253,7 +253,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_todolist", Title: "更新任务清单",
+		Name: "update_todolist", Title: "更新任务清单",
 		Desc:   "更新指定任务清单的名称或描述",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todolists/{todolist_id}", BodyEnvelope: "todolist",
 		Params: []mcpParam{
@@ -263,7 +263,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_delete_todolist", Title: "删除任务清单",
+		Name: "delete_todolist", Title: "删除任务清单",
 		Desc:   "删除指定任务清单（危险操作）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/todolists/{todolist_id}",
 		Params: []mcpParam{pPath("todolist_id", "任务清单 ID")},
@@ -271,7 +271,7 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 任务
 	{
-		Name: "tower_list_todos", Title: "获取清单下的任务列表",
+		Name: "list_todos", Title: "获取清单下的任务列表",
 		Desc:   "获取指定任务清单中的任务列表，可通过 completed_todo 控制是否包含已完成任务",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todolists/{todolist_id}/todos",
 		Params: []mcpParam{
@@ -282,7 +282,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_create_todo", Title: "创建任务",
+		Name: "create_todo", Title: "创建任务",
 		Desc:   "在指定任务清单下创建新任务，支持指派负责人、起止日期、父任务与自定义字段",
 		Method: http.MethodPost, PathTemplate: "/api/v1/todolists/{todolist_id}/todos", BodyEnvelope: "todo",
 		Params: []mcpParam{
@@ -299,13 +299,13 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_get_todo", Title: "获取任务详情",
+		Name: "get_todo", Title: "获取任务详情",
 		Desc:   "根据 todo_id 获取任务完整信息（含检查项、评论、负责人等关联数据）",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todos/{todo_id}",
 		Params: []mcpParam{pPath("todo_id", "任务 ID")},
 	},
 	{
-		Name: "tower_get_todo_by_number", Title: "按团队内任务编号获取任务",
+		Name: "get_todo_by_number", Title: "按团队内任务编号获取任务",
 		Desc:   "根据 team_id 和团队内任务短编号（team_wide_id，如 #123 中的 123）获取任务详情",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/todos/{team_wide_id}",
 		Params: []mcpParam{
@@ -314,7 +314,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_todo", Title: "更新任务信息",
+		Name: "update_todo", Title: "更新任务信息",
 		Desc:   "更新指定任务的标题、描述、负责人、起止日期、标签或自定义字段",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}", BodyEnvelope: "todo",
 		Params: []mcpParam{
@@ -331,31 +331,31 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_delete_todo", Title: "删除任务",
+		Name: "delete_todo", Title: "删除任务",
 		Desc:   "删除指定任务（危险操作）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/todos/{todo_id}",
 		Params: []mcpParam{pPath("todo_id", "任务 ID")},
 	},
 	{
-		Name: "tower_complete_todo", Title: "完成任务",
+		Name: "complete_todo", Title: "完成任务",
 		Desc:   "将指定任务标记为已完成",
 		Method: http.MethodPost, PathTemplate: "/api/v1/todos/{todo_id}/completion",
 		Params: []mcpParam{pPath("todo_id", "任务 ID")},
 	},
 	{
-		Name: "tower_reopen_todo", Title: "重新打开已完成任务",
+		Name: "reopen_todo", Title: "重新打开已完成任务",
 		Desc:   "取消任务的完成状态，将其重新打开为未完成",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/todos/{todo_id}/completion",
 		Params: []mcpParam{pPath("todo_id", "任务 ID")},
 	},
 	{
-		Name: "tower_list_todo_comments", Title: "获取任务评论列表",
+		Name: "list_todo_comments", Title: "获取任务评论列表",
 		Desc:   "获取指定任务下的评论列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todos/{todo_id}/comments",
 		Params: []mcpParam{pPath("todo_id", "任务 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_create_todo_comment", Title: "发布任务评论",
+		Name: "create_todo_comment", Title: "发布任务评论",
 		Desc:   "在指定任务下发表新评论",
 		Method: http.MethodPost, PathTemplate: "/api/v1/todos/{todo_id}/comments", BodyEnvelope: "comment",
 		Params: []mcpParam{
@@ -364,7 +364,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_assign_todo", Title: "指派任务负责人",
+		Name: "assign_todo", Title: "指派任务负责人",
 		Desc:   "将指定任务指派给某个成员",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}/assignment", BodyEnvelope: "todos_assignment",
 		Params: []mcpParam{
@@ -373,13 +373,13 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_unassign_todo", Title: "移除任务负责人",
+		Name: "unassign_todo", Title: "移除任务负责人",
 		Desc:   "取消当前任务的负责人指派",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/todos/{todo_id}/assignment",
 		Params: []mcpParam{pPath("todo_id", "任务 ID")},
 	},
 	{
-		Name: "tower_update_todo_due", Title: "更新任务截止日期",
+		Name: "update_todo_due", Title: "更新任务截止日期",
 		Desc:   "单独修改指定任务的截止日期（due_at）",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}/due", BodyEnvelope: "todos_due",
 		Params: []mcpParam{
@@ -388,7 +388,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_todo_desc", Title: "更新任务描述",
+		Name: "update_todo_desc", Title: "更新任务描述",
 		Desc:   "单独更新指定任务的详细描述内容",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}/desc", BodyEnvelope: "todos_desc",
 		Params: []mcpParam{
@@ -397,13 +397,13 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_list_todo_cc_members", Title: "获取任务通知成员列表",
+		Name: "list_todo_cc_members", Title: "获取任务通知成员列表",
 		Desc:   "查询指定任务当前关注/抄送通知的成员列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todos/{todo_id}/cc_members",
 		Params: []mcpParam{pPath("todo_id", "任务 ID"), pLocalPage(), pLocalPageSize()},
 	},
 	{
-		Name: "tower_update_todo_cc_members", Title: "更新任务通知成员列表",
+		Name: "update_todo_cc_members", Title: "更新任务通知成员列表",
 		Desc:   "设置指定任务的关注/抄送通知成员列表",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/todos/{todo_id}/cc_members",
 		Params: []mcpParam{
@@ -414,19 +414,19 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 讨论
 	{
-		Name: "tower_list_topics", Title: "获取项目讨论列表",
+		Name: "list_topics", Title: "获取项目讨论列表",
 		Desc:   "获取指定项目下的讨论主题列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/topics",
 		Params: []mcpParam{pPath("project_id", "项目 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_get_topic", Title: "获取讨论详情",
+		Name: "get_topic", Title: "获取讨论详情",
 		Desc:   "获取指定讨论主题的内容与回复",
 		Method: http.MethodGet, PathTemplate: "/api/v1/topics/{topic_id}",
 		Params: []mcpParam{pPath("topic_id", "讨论 ID")},
 	},
 	{
-		Name: "tower_create_topic", Title: "创建项目讨论",
+		Name: "create_topic", Title: "创建项目讨论",
 		Desc:   "在指定项目下发起新讨论",
 		Method: http.MethodPost, PathTemplate: "/api/v1/projects/{project_id}/topics", BodyEnvelope: "message",
 		Params: []mcpParam{
@@ -436,7 +436,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_topic", Title: "更新讨论",
+		Name: "update_topic", Title: "更新讨论",
 		Desc:   "修改指定讨论的标题或正文内容",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/topics/{topic_id}", BodyEnvelope: "message",
 		Params: []mcpParam{
@@ -446,7 +446,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_delete_topic", Title: "删除讨论",
+		Name: "delete_topic", Title: "删除讨论",
 		Desc:   "删除指定项目讨论（危险操作）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/topics/{topic_id}",
 		Params: []mcpParam{pPath("topic_id", "讨论 ID")},
@@ -454,13 +454,13 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 文件与直传
 	{
-		Name: "tower_list_uploads", Title: "获取项目文件列表",
+		Name: "list_uploads", Title: "获取项目文件列表",
 		Desc:   "获取指定项目中的上传文件列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/uploads",
 		Params: []mcpParam{pPath("project_id", "项目 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_create_upload", Title: "关联创建项目文件",
+		Name: "create_upload", Title: "关联创建项目文件",
 		Desc:   "使用已上传完成的附件 attfile_guid 在项目中创建文件记录",
 		Method: http.MethodPost, PathTemplate: "/api/v1/projects/{project_id}/uploads",
 		Params: []mcpParam{
@@ -469,25 +469,25 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_get_upload", Title: "获取文件详情",
+		Name: "get_upload", Title: "获取文件详情",
 		Desc:   "获取指定项目文件的详细信息",
 		Method: http.MethodGet, PathTemplate: "/api/v1/uploads/{upload_id}",
 		Params: []mcpParam{pPath("upload_id", "文件 ID")},
 	},
 	{
-		Name: "tower_delete_upload", Title: "删除文件",
+		Name: "delete_upload", Title: "删除文件",
 		Desc:   "删除指定项目文件（危险操作）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/uploads/{upload_id}",
 		Params: []mcpParam{pPath("upload_id", "文件 ID")},
 	},
 	{
-		Name: "tower_get_attachment_url", Title: "获取附件下载地址",
+		Name: "get_attachment_url", Title: "获取附件下载地址",
 		Desc:   "根据附件 ID 获取原始下载链接信息",
 		Method: http.MethodGet, PathTemplate: "/api/v1/attfiles/{attfile_id}",
 		Params: []mcpParam{pPath("attfile_id", "附件 ID")},
 	},
 	{
-		Name: "tower_create_direct_upload", Title: "获取客户端直传 OSS 签名",
+		Name: "create_direct_upload", Title: "获取客户端直传 OSS 签名",
 		Desc:   "获取向 Tower 阿里云 OSS 直传文件所需的签名凭证与回调参数",
 		Method: http.MethodPost, PathTemplate: "/api/v1/teams/{team_id}/direct_uploads",
 		Params: []mcpParam{
@@ -500,7 +500,7 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 工时
 	{
-		Name: "tower_list_project_time_logs", Title: "获取项目工时列表",
+		Name: "list_project_time_logs", Title: "获取项目工时列表",
 		Desc:   "获取指定项目下的所有工时记录，支持按成员与起止日期筛选",
 		Method: http.MethodGet, PathTemplate: "/api/v1/projects/{project_id}/time_logs",
 		Params: []mcpParam{
@@ -513,13 +513,13 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_list_todo_time_logs", Title: "获取任务工时列表",
+		Name: "list_todo_time_logs", Title: "获取任务工时列表",
 		Desc:   "获取指定任务下的所有工时记录",
 		Method: http.MethodGet, PathTemplate: "/api/v1/todos/{todo_id}/time_logs",
 		Params: []mcpParam{pPath("todo_id", "任务 ID"), pPage(), pPageSize()},
 	},
 	{
-		Name: "tower_create_time_log", Title: "添加任务工时",
+		Name: "create_time_log", Title: "添加任务工时",
 		Desc:   "为指定任务添加一条工时记录",
 		Method: http.MethodPost, PathTemplate: "/api/v1/todos/{todo_id}/time_logs", BodyEnvelope: "time_log",
 		Params: []mcpParam{
@@ -531,7 +531,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_update_time_log", Title: "更新工时信息",
+		Name: "update_time_log", Title: "更新工时信息",
 		Desc:   "修改指定工时记录的起止时间、记录人或描述",
 		Method: http.MethodPatch, PathTemplate: "/api/v1/time_logs/{time_log_id}", BodyEnvelope: "time_log",
 		Params: []mcpParam{
@@ -543,7 +543,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_delete_time_log", Title: "删除工时记录",
+		Name: "delete_time_log", Title: "删除工时记录",
 		Desc:   "删除指定工时记录（危险操作）",
 		Method: http.MethodDelete, PathTemplate: "/api/v1/time_logs/{time_log_id}",
 		Params: []mcpParam{pPath("time_log_id", "工时记录 ID")},
@@ -551,7 +551,7 @@ var towerMCPTools = []mcpToolSpec{
 
 	// 动态与通知
 	{
-		Name: "tower_list_events", Title: "获取团队动态列表",
+		Name: "list_events", Title: "获取团队动态列表",
 		Desc:   "获取指定团队的活动动态流，可通过 last_item_id 游标向后翻页",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/events",
 		Params: []mcpParam{
@@ -562,7 +562,7 @@ var towerMCPTools = []mcpToolSpec{
 		},
 	},
 	{
-		Name: "tower_list_notifications", Title: "获取团队通知列表",
+		Name: "list_notifications", Title: "获取团队通知列表",
 		Desc:   "获取当前成员在指定团队中的通知列表",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/notifications",
 		Params: []mcpParam{pPath("team_id", "团队 ID"), pPage(), pPageSize()},
@@ -637,7 +637,7 @@ func listMCPToolDefinitions() []map[string]any {
 	}
 	out = append(out,
 		map[string]any{
-			"name":        "tower_my_todo_overview",
+			"name":        "my_todo_overview",
 			"description": "聚合获取当前账号跨团队的未完成任务汇总（自动查询所属团队、解析当前成员 member_id 并拉取指派给自己或自己创建的未完成任务，无需分步串联 ID）",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -656,7 +656,7 @@ func listMCPToolDefinitions() []map[string]any {
 			},
 		},
 		map[string]any{
-			"name":        "tower_search_todos",
+			"name":        "search_todos",
 			"description": "按关键词聚合搜索任务（受限于 Tower Open API，按成员/项目/团队范围拉取后本地过滤，内置频率、并发与上游请求数限流）",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -679,7 +679,7 @@ func listMCPToolDefinitions() []map[string]any {
 			},
 		},
 		map[string]any{
-			"name":        "tower_upload_file",
+			"name":        "upload_file",
 			"description": "一步上传文件到阿里云 OSS 并关联创建为 Tower 项目文件（自动计算字节大小与 MD5、获取直传签名、上传表单并写入项目文件列表）",
 			"inputSchema": map[string]any{
 				"type": "object",
@@ -703,7 +703,7 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 	)
 	out = append(out, map[string]any{
-		"name":        "tower_raw_request",
+		"name":        "raw_request",
 		"description": "向 Tower /api/v1/* 发送自定义 HTTP 请求（用于自定义筛选参数或未单独封装的高级接口）",
 		"inputSchema": map[string]any{
 			"type": "object",
@@ -929,7 +929,7 @@ func dispatchMCPMethod(
 				"name":    "AgentsTower",
 				"version": "1.0.0",
 			},
-			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 tower_my_todo_overview；一步上传文件到项目请调用 tower_upload_file。常规层级顺序：tower_list_teams 获取 team_id -> tower_list_projects 获取 project_id（或 tower_list_team_members 获取 member_id）-> tower_list_todolists 获取 todolist_id -> 查询、创建或完成任务（tower_complete_todo / tower_reopen_todo 默认允许所有成员调用）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+			"instructions": "AgentsTower 提供 Tower.im 团队协作平台的完整操作工具。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（complete_todo / reopen_todo 默认允许所有成员调用）。所有列表工具默认每页限制返回 20 条（最大 50）。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 		})
 
 	case "ping":
@@ -1007,16 +1007,16 @@ func executeMCPTool(
 	name string,
 	args map[string]any,
 ) (string, bool) {
-	if name == "tower_my_todo_overview" {
+	if name == "my_todo_overview" {
 		return executeMyTodoOverview(ctx, cfg, mcpKey, acc, args)
 	}
-	if name == "tower_search_todos" {
+	if name == "search_todos" {
 		return executeSearchTodos(ctx, cfg, mcpKey, acc, args)
 	}
-	if name == "tower_upload_file" {
+	if name == "upload_file" {
 		return executeUploadFile(ctx, cfg, mcpKey, acc, args)
 	}
-	if name == "tower_raw_request" {
+	if name == "raw_request" {
 		method := strings.ToUpper(stringifyArg(args["method"]))
 		switch method {
 		case http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete:
@@ -1156,7 +1156,7 @@ func executeMCPTool(
 				queryVals.Set("page[size]", strconv.Itoa(maxItems))
 			}
 		}
-	} else if spec.Method == http.MethodGet && strings.HasPrefix(spec.Name, "tower_list_") {
+	} else if spec.Method == http.MethodGet && strings.HasPrefix(spec.Name, "list_") {
 		maxItems = maxListPageSize
 	}
 
@@ -1382,7 +1382,7 @@ func callTowerForMCP(
 	if len(bytes.TrimSpace(respBytes)) == 0 {
 		return fmt.Sprintf("操作成功 (HTTP %d)", statusCode), false
 	}
-	if tool != "tower_raw_request" {
+	if tool != "raw_request" {
 		return resultProfiles[tool].text(compactTowerBody(respBytes, tool)), false
 	}
 	return agentText(respBytes), false
@@ -1564,7 +1564,7 @@ func executeMyTodoOverview(
 		summary["total_created_uncompleted"] = totalCreated
 	}
 	out, _ := json.Marshal(summary)
-	return resultProfiles["tower_my_todo_overview"].compositeText(out), false
+	return resultProfiles["my_todo_overview"].compositeText(out), false
 }
 
 func executeUploadFile(
@@ -1685,7 +1685,7 @@ func executeUploadFile(
 		"filename":     filename,
 		"byte_size":    len(fileBytes),
 		"md5":          md5Hex,
-		"upload":       compactTowerBody(cBody, "tower_create_upload"),
+		"upload":       compactTowerBody(cBody, "create_upload"),
 	})
-	return resultProfiles["tower_upload_file"].compositeText(result), false
+	return resultProfiles["upload_file"].compositeText(result), false
 }
