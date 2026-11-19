@@ -70,7 +70,7 @@ var resultProfiles = map[string]resultProfile{
 	"list_events":                            {"团队动态", "id action title creator created_at ancestor_type ancestor_name"},
 	"list_notifications":                     {"团队通知", "id read progress target_guid notifyable_type created_at subject_str action_str content_str extra_info"},
 	"advanced_search_todos":                  {"高级任务搜索结果", "keyword scope status matched_count scanned_count incomplete_reason items truncated warnings"},
-	"search_todos":                           {"任务搜索结果", "keyword tag page count has_more next_page items"},
+	"search_todos":                           {"任务搜索结果", "keyword tag category searched_teams page count has_more next_page message items"},
 	"list_todo_dependencies":                 {"任务依赖", "*"},
 	"add_todo_dependency":                    {"任务依赖已添加", "*"},
 	"remove_todo_dependency":                 {"任务依赖已解除", "*"},

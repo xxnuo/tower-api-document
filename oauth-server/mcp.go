@@ -113,10 +113,10 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "get_team_resource", Title: "按团队资源编号查询资源",
-		Desc:   "根据团队 ID 与资源短编号查询对应 Tower 资源信息",
+		Desc:   "将网页团队数字编号和资源短编号映射为 Open API GUID 和资源类型。知识库文档元数据与正文请调用 read_repository_item。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/resources/{resource_id}",
 		Params: []mcpParam{
-			pPath("team_id", "团队 ID"),
+			pPath("team_id", "URL 中的数字团队编号，如 750316"),
 			pPath("resource_id", "团队内资源编号"),
 		},
 	},
@@ -693,13 +693,14 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索，须提供非空的 keyword 或 tag。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
+			"description": "使用 Tower 网页搜索，须提供非空的 keyword 或 tag。需要该账号已完成网页登录。用 team_id 限定团队。文档命中后将 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"page":          map[string]any{"type": "integer", "minimum": 1, "description": "页码，默认 1。保留其他参数，按 next_page 继续。每团队每页 20 条。"},
 					"category":      map[string]any{"type": "integer", "description": "Tower 网页内容类型，默认 2 任务。-1 全部、1 清单、4 文件或附件、7 评论、15 项目、18 知识库文档。"},
 					"target_gid":    map[string]any{"type": "string", "description": "网页项目或知识库 GID，如 gid://tower2/Project/123。省略时搜索所有项目。"},
+					"team_id":       map[string]any{"type": "string", "description": "限定单个团队，传 list_teams 返回的团队 GUID。"},
 					"member_guid":   map[string]any{"type": "string", "pattern": "^[a-f0-9]{32}$", "description": "用于附加筛选的网页成员 GUID（即 Tower API 成员 ID）。须同时提供非空的 keyword 或 tag，仅搜索该成员所属团队。"},
 					"sort":          map[string]any{"type": "integer", "enum": []int{1, 2}, "description": "1 时间顺序（默认），2 相关度。"},
 					"exclude_trash": map[string]any{"type": "boolean", "default": true, "description": "隐藏回收站内容。"},
@@ -798,7 +799,7 @@ func listMCPToolDefinitions() []map[string]any {
 	out = append(out, projectTodosToolDefinition())
 	out = append(out, map[string]any{
 		"name":        "raw_request",
-		"description": "向 Tower /api/v1/* 发送自定义 HTTP 请求（用于自定义筛选参数或未单独封装的高级接口）",
+		"description": "知识库正文须用 read_repository_item。向 Tower /api/v1/* 发送自定义 HTTP 请求（用于自定义筛选参数或未单独封装的高级接口）",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -868,7 +869,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 		toolIndex[spec.Name] = spec
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: "1.0.0"}, &mcp.ServerOptions{
-		Instructions: "完整分页枚举项目任务请用 list_project_todos。网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。标准列表工具默认每页 20 条（最大 50），按 meta.next_page 翻页；list_events 将 meta.next_cursor 传给 last_item_id。meta.returned 是本次返回数，meta.total 仅在可确认时提供。成员待办基于活跃且未完成的任务，任务关系不可用时可能回退到部分列表。my_todo_overview 未指定团队时最多检查 10 个团队。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
+		Instructions: "查询团队知识库时，用 search_todos(team_id, keyword, category=18) 搜索，再将命中的 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。完整分页枚举项目任务请用 list_project_todos。网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。标准列表工具默认每页 20 条（最大 50），按 meta.next_page 翻页；list_events 将 meta.next_cursor 传给 last_item_id。meta.returned 是本次返回数，meta.total 仅在可确认时提供。成员待办基于活跃且未完成的任务，任务关系不可用时可能回退到部分列表。my_todo_overview 未指定团队时最多检查 10 个团队。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 	})
 	for _, def := range listMCPToolDefinitions() {
 		data, err := json.Marshal(def)
@@ -1453,7 +1454,13 @@ func callTowerForMCP(
 		}
 		return text, false
 	}
-	return resultProfiles[tool].text(compactTowerBody(respBytes, tool)), false
+	value := compactTowerBody(respBytes, tool)
+	if tool == "get_team_resource" {
+		if record, ok := value.(map[string]any); ok {
+			enrichRepositoryResource(ctx, cfg, acc, apiPath, record)
+		}
+	}
+	return resultProfiles[tool].text(value), false
 }
 
 func doTowerHTTPWithRefresh(

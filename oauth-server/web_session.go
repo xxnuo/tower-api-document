@@ -9,6 +9,7 @@ import (
 	dom "golang.org/x/net/html"
 	"html"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -285,12 +286,12 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 				return nil, errors.New("tag 须为非空字符串")
 			}
 			v = "#" + name
-		case "keyword", "target_gid", "member_guid":
+		case "keyword", "target_gid", "member_guid", "team_id":
 			if _, ok := val.(string); !ok {
 				return nil, fmt.Errorf("%s 须为字符串", key)
 			}
-			if key == "member_guid" && !guidPattern.MatchString(v) {
-				return nil, errors.New("member_guid 必须是 Tower 成员 GUID")
+			if (key == "member_guid" || key == "team_id") && !guidPattern.MatchString(v) {
+				return nil, fmt.Errorf("%s 必须是 Tower GUID", key)
 			}
 			if key == "keyword" && v == "" {
 				continue
@@ -346,10 +347,16 @@ func (client *webClient) searchTeamTodos(ctx context.Context, query url.Values, 
 		}
 		for _, item := range parseSearchItems(text) {
 			item["team"] = team
+			item["team_id"] = team
 			items = append(items, item)
 		}
 	}
 	result := map[string]any{"keyword": query.Get("keyword"), "items": items, "count": len(items), "page": page, "has_more": more}
+	result["searched_teams"] = teams
+	result["category"] = query.Get("category")
+	if len(items) == 0 {
+		result["message"] = "本页没有 Tower 网页索引命中。可用 list_repositories 和 list_repository_items 浏览该团队的可见目录。"
+	}
 	if tag := query.Get("tag"); tag != "" {
 		result["tag"] = tag
 	}
@@ -590,14 +597,46 @@ func runWebSearch(ctx context.Context, cfg Config, acc *StoredAccount, query url
 		return nil, err
 	}
 	defer client.save()
+	teamID := query.Get("team_id")
+	query = maps.Clone(query)
+	query.Del("team_id")
 	if member := query.Get("member_guid"); member != "" {
 		team, err := searchMemberTeam(ctx, cfg, acc, member)
 		if err != nil {
 			return nil, err
 		}
-		return client.searchTeamTodos(ctx, query, []string{team})
+		if teamID != "" && teamID != team {
+			return nil, errors.New("member_guid 与 team_id 所属团队不一致")
+		}
+		teamID = team
 	}
-	return client.searchTodos(ctx, query)
+	var result map[string]any
+	if teamID != "" {
+		result, err = client.searchTeamTodos(ctx, query, []string{teamID})
+	} else {
+		result, err = client.searchTodos(ctx, query)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range result["items"].([]any) {
+		item := row.(map[string]any)
+		if item["category"] != "TrRepository::Document" {
+			continue
+		}
+		path := libraryItemPath.FindStringSubmatch(stringifyArg(item["url"]))
+		if path == nil || path[2] != "repository_documents" {
+			continue
+		}
+		status, body, lookupErr := doTowerHTTPWithRefresh(ctx, cfg, acc.MCPAPIKey, acc, http.MethodGet, "/api/v1/teams/"+path[1]+"/resources/"+path[3], "", nil)
+		var doc struct{ Data struct{ ID, Type string } }
+		if lookupErr == nil && status == 200 && json.Unmarshal(body, &doc) == nil && doc.Data.Type == "tr_repository_documents" && guidPattern.MatchString(doc.Data.ID) {
+			item["id"] = doc.Data.ID
+		} else {
+			item["id_status"] = "未解析到资源 GUID，可直接使用 url 读取正文"
+		}
+	}
+	return result, nil
 }
 
 func searchMemberTeam(ctx context.Context, cfg Config, acc *StoredAccount, member string) (string, error) {
@@ -660,9 +699,15 @@ func parseSearchItems(page string) []map[string]any {
 		}
 		item := map[string]any{"category": category}
 		var link *dom.Node
+		var comment bool
 		for n := range row.Descendants() {
 			switch {
 			case n.Data == "p" && strings.Contains(attr(n, "class"), "result-title"):
+				for child := n.FirstChild; child != nil; child = child.NextSibling {
+					if child.Type == dom.TextNode && strings.HasPrefix(strings.TrimSpace(child.Data), "评论：") {
+						comment = true
+					}
+				}
 				if v := attr(n, "data-completed"); v != "" {
 					item["completed"] = v == "true"
 				}
@@ -670,6 +715,16 @@ func parseSearchItems(page string) []map[string]any {
 					if a.Data == "a" && attr(a, "class") != "tag" && attr(a, "href") != "" {
 						link = a
 						break
+					}
+				}
+			case n.Data == "a" && webHasClass(n, "author"):
+				item["author"] = webNodeText(n)
+				if comment && n.Parent != nil {
+					for el := range n.Parent.ChildNodes() {
+						if el.Data == "span" {
+							item["excerpt"] = webNodeText(el)
+							break
+						}
 					}
 				}
 			case n.Data == "a" && strings.Contains(attr(n, "class"), "attachment-name"):
@@ -696,7 +751,25 @@ func parseSearchItems(page string) []map[string]any {
 		if id == "" || category != "Todo" {
 			id = href
 		}
-		item["id"] = id
+		if comment {
+			item["category"] = "Comment"
+			item["parent_type"] = category
+			if pageURL, e := url.Parse(href); e == nil {
+				if guidPattern.MatchString(pageURL.Fragment) {
+					item["id"] = pageURL.Fragment
+				}
+				pageURL.Fragment = ""
+				item["parent_url"] = pageURL.String()
+			}
+		} else if path := libraryItemPath.FindStringSubmatch(href); path != nil {
+			item["team_number"] = path[1]
+			item["resource_number"] = path[3]
+			if path[2] == "repository_documents" {
+				item["read_tool"] = "read_repository_item"
+			}
+		} else {
+			item["id"] = id
+		}
 		items = append(items, item)
 	}
 	return items

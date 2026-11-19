@@ -185,6 +185,18 @@ func TestWebSearchOnlySearchesMemberTeam(t *testing.T) {
 			t.Errorf("member %q: requests = %v, err = %v", tc.member, requests, err)
 		}
 	}
+	requests = nil
+	scoped := url.Values{"keyword": {"Tower"}, "page": {"1"}, "team_id": {otherTeam}}
+	result, err := runWebSearch(t.Context(), cfg, acc, scoped)
+	if err != nil || !slices.Equal(requests, []string{"/teams/" + otherTeam + "/search"}) || result["message"] == nil {
+		t.Fatal(requests, result, err)
+	}
+	scoped.Set("member_guid", member)
+	requests = nil
+	if _, err := runWebSearch(t.Context(), cfg, acc, scoped); err == nil || !slices.Equal(requests, []string{"/api/v1/members/" + member}) {
+		t.Fatal(requests, err)
+	}
+
 }
 
 func TestWebSearchLastPageWithFilters(t *testing.T) {
@@ -211,5 +223,17 @@ func TestWebSearchLastPageWithFilters(t *testing.T) {
 	result, err := client.searchTodos(context.Background(), query)
 	if err != nil || result["has_more"] != false || result["next_page"] != nil || result["items"].([]any)[0].(map[string]any)["title"] != "任务" {
 		t.Fatal(result, err)
+	}
+}
+
+func TestRepositoryCommentSearchIdentity(t *testing.T) {
+	const path = "/teams/42/repository_documents/22"
+	const id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	rows := parseSearchItems(`<li data-category="TrRepository::Document"><p class="result-title">评论： <a href="` + path + "#" + id + `">Document</a></p><p><a class="author">Alice</a><span>needle</span></p></li><li data-category="TrRepository::Document"><p class="result-title"><a href="` + path + `">Document</a></p></li>`)
+	if len(rows) != 2 || rows[0]["id"] != id || rows[0]["category"] != "Comment" || rows[0]["parent_url"] != path || rows[0]["excerpt"] != "needle" {
+		t.Fatal(rows)
+	}
+	if rows[1]["id"] != nil || rows[1]["resource_number"] != "22" || rows[1]["read_tool"] != "read_repository_item" {
+		t.Fatal(rows[1])
 	}
 }

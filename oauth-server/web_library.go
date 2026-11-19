@@ -46,7 +46,7 @@ var gatewayLibraryTools = []mcpToolSpec{
 		Method: http.MethodGet, PathTemplate: "/api/v1/teams/{team_id}/repository_item",
 		Params: []mcpParam{
 			pPath("team_id", "团队 GUID，可从 list_teams 获取"),
-			{Name: "url", Type: "string", In: "query", Required: true, Desc: "list_repository_items 返回的文档或文件 URL"},
+			{Name: "url", Type: "string", In: "query", Required: true, Desc: "search_todos 或 list_repository_items 返回的文档或文件 url"},
 		},
 	},
 }
@@ -124,6 +124,10 @@ func (client *webClient) library(ctx context.Context, tool, team, rawURL string)
 	if resource == nil || hiddenValues(pageText)["team-guid"] != team {
 		return nil, errors.New("无法确认知识库资源属于指定团队")
 	}
+	return client.parseLibraryPage(tool, team, resource, pageText)
+}
+
+func (client *webClient) parseLibraryPage(tool, team string, resource []string, pageText string) (map[string]any, error) {
 	doc, err := html.Parse(strings.NewReader(pageText))
 	if err != nil {
 		return nil, err
@@ -141,16 +145,27 @@ func (client *webClient) library(ctx context.Context, tool, team, rawURL string)
 	current := client.libraryItem(resource, "")
 	repositoryURL := ""
 	var table, content *html.Node
+	var parentURL, updatedAt string
 	for n := range page.Descendants() {
 		switch {
 		case (n.Data == "h1" || n.Data == "h2") && current.Title == "" &&
 			(webHasClass(n, "header-title") || webHasClass(n, "breadcrumb-name") ||
 				webHasClass(n, "document-title") || webHasClass(n, "upload-title")):
 			current.Title = webNodeText(n)
-		case n.Data == "a" && webHasClass(n, "breadcrumb-name") && repositoryURL == "":
+		case n.Data == "a" && webHasClass(n, "breadcrumb-name"):
 			root := libraryItemPath.FindStringSubmatch(attr(n, "href"))
-			if root != nil && root[1] == entry[1] && root[2] == "repositories" {
+			if root != nil && root[1] == resource[1] && (root[2] == "repositories" || root[2] == "repository_folders") {
+				parentURL = client.resolve(strings.TrimRight(root[0], "/"))
+			}
+			if root != nil && root[1] == resource[1] && root[2] == "repositories" {
 				repositoryURL = client.resolve(strings.TrimRight(root[0], "/"))
+			}
+		case webHasClass(n, "document-info"):
+			for el := range n.Descendants() {
+				if ts := towerDateValue(attr(el, "data-readable-time")); ts != "" {
+					updatedAt = ts
+					break
+				}
 			}
 		case n.Data == "tr-repository-folder-table" && table == nil:
 			table = n
@@ -168,6 +183,12 @@ func (client *webClient) library(ctx context.Context, tool, team, rawURL string)
 		return map[string]any{"team_id": team, "items": []libraryItem{current}}, nil
 	}
 	result := map[string]any{"team_id": team, "id": current.ID, "url": current.URL, "title": current.Title, "type": current.Type, "repository_url": repositoryURL}
+	if parentURL != "" {
+		result["parent_url"] = parentURL
+	}
+	if updatedAt != "" {
+		result["updated_at"] = updatedAt
+	}
 	if tool == "list_repository_items" {
 		if table == nil {
 			return nil, errors.New("未找到知识库目录列表")
@@ -178,11 +199,14 @@ func (client *webClient) library(ctx context.Context, tool, team, rawURL string)
 				continue
 			}
 			link := libraryItemPath.FindStringSubmatch(attr(n, "href"))
-			if link != nil && link[1] == entry[1] && link[2] != "repositories" {
+			if link != nil && link[1] == resource[1] && link[2] != "repositories" {
 				items = append(items, client.libraryItem(link, webNodeText(n)))
 			}
 		}
 		result["items"] = items
+		return result, nil
+	}
+	if tool == "get_team_resource" {
 		return result, nil
 	}
 	if current.Type == "document" && content != nil {
@@ -239,4 +263,48 @@ func (client *webClient) libraryPage(ctx context.Context, origin *url.URL, path,
 		return "", "", fmt.Errorf("Tower 知识库网页请求失败 HTTP %d", status)
 	}
 	return body, finalPath, nil
+}
+
+// Resource lookup works with OAuth alone. Add document metadata when the account also has a web session.
+func enrichRepositoryResource(ctx context.Context, cfg Config, acc *StoredAccount, apiPath string, record map[string]any) {
+	if record["type"] != "tr_repository_documents" {
+		return
+	}
+	parts := strings.Split(apiPath, "/")
+	if len(parts) != 7 {
+		return
+	}
+	path := "/teams/" + parts[4] + "/repository_documents/" + parts[6]
+	resource := libraryItemPath.FindStringSubmatch(path)
+	if resource == nil {
+		return
+	}
+	record["url"] = path
+	record["read_tool"] = "read_repository_item"
+	client, err := useWebClient(ctx, cfg, acc)
+	if err != nil {
+		record["metadata_status"] = "需要网页登录以读取元数据"
+		return
+	}
+	defer client.save()
+	origin, err := url.Parse(client.base)
+	if err != nil {
+		return
+	}
+	page, _, err := client.libraryPage(ctx, origin, path, resource[1])
+	if err == nil {
+		team := hiddenValues(page)["team-guid"]
+		if guidPattern.MatchString(team) {
+			info, err := client.parseLibraryPage("get_team_resource", team, resource, page)
+			if err == nil {
+				for _, key := range []string{"team_id", "title", "parent_url", "repository_url", "updated_at"} {
+					if v, ok := info[key]; ok {
+						record[key] = v
+					}
+				}
+				return
+			}
+		}
+	}
+	record["metadata_status"] = "未能读取网页元数据"
 }
