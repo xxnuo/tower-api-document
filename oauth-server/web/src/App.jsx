@@ -1,9 +1,47 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  CheckIcon,
+  CopyIcon,
+  DesktopIcon,
+  DownloadSimpleIcon,
+  MoonIcon,
+  PlusIcon,
+  SunIcon,
+} from "@phosphor-icons/react";
 import AdminPanel from "./AdminPanel.jsx";
 import ApiExplorer from "./ApiExplorer.jsx";
 import AuthScreen, { removeQuickLoginEntry, saveQuickLoginEntry } from "./AuthScreen.jsx";
 import McpExplorer from "./McpExplorer.jsx";
-import { BrandMark, CopyField, ModalDialog, StatusBanner, UI } from "./ui.jsx";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { BrandMark, ConfirmDialog, CopyField, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 const LEGACY_STORAGE_KEY = "tower_oauth_result_v1";
 const ACCOUNTS_STORAGE_KEY = "tower_oauth_accounts_v1";
@@ -110,14 +148,6 @@ function formatRemaining(token, now) {
   if (hours > 0) return { expired: false, soon: false, label: `剩余 ${hours}小时${mins}分` };
   if (mins > 0) return { expired: false, soon: mins < 15, label: `剩余 ${mins}分钟` };
   return { expired: false, soon: true, label: "即将过期" };
-}
-
-function closeUserPopover() {
-  try {
-    document.getElementById("panel-user-actions")?.hidePopover?.();
-  } catch {
-    // ignore if popover API unavailable
-  }
 }
 
 export default function App() {
@@ -284,7 +314,6 @@ export default function App() {
   }
 
   async function handleSignOutUser() {
-    closeUserPopover();
     await fetch("/api/auth/logout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -298,7 +327,6 @@ export default function App() {
   }
 
   async function handleSignOutAllDevices() {
-    closeUserPopover();
     const uname = authUser?.username;
     await fetch("/api/auth/logout-all", { method: "POST" }).catch(() => {});
     if (uname) removeQuickLoginEntry(uname);
@@ -608,7 +636,7 @@ export default function App() {
 
   if (authChecking) {
     return (
-      <div className="min-h-dvh flex items-center justify-center bg-[#FAFAFB] text-xs font-mono text-zinc-500 dark:bg-[#09090B] dark:text-zinc-400">
+      <div className="min-h-dvh flex items-center justify-center bg-background text-xs font-mono text-muted-foreground">
         INITIALIZING...
       </div>
     );
@@ -620,7 +648,6 @@ export default function App() {
         hasUsers={hasUsers}
         registrationMode={config.registration_mode || "open"}
         onAuthenticated={handleAuthLoaded}
-        theme={theme}
         onToggleTheme={() => setTheme(themeMeta.next)}
         themeLabel={themeMeta.label}
       />
@@ -658,8 +685,8 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-dvh lg:h-dvh lg:overflow-hidden flex flex-col bg-[#FAFAFB] text-zinc-950 dark:bg-[#09090B] dark:text-zinc-100">
-      <header className="shrink-0 border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-[#111113]">
+    <div className="min-h-dvh lg:h-dvh lg:overflow-hidden flex flex-col bg-background text-foreground">
+      <header className="shrink-0 border-b bg-card">
         <div className="flex h-12 items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-4 min-w-0">
             <a
@@ -668,15 +695,15 @@ export default function App() {
                 e.preventDefault();
                 navigateToTab("creds");
               }}
-              className="flex items-center gap-2 shrink-0 text-zinc-950 dark:text-zinc-100"
+              className="flex items-center gap-2 shrink-0 text-foreground"
             >
-              <span className="flex h-6 w-6 items-center justify-center rounded border border-zinc-200 bg-zinc-950 text-white dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-950">
-                <BrandMark className="h-3.5 w-3.5" />
+              <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                <BrandMark className="size-3.5" />
               </span>
-              <span className="text-sm font-semibold tracking-tight">AgentsTower</span>
+              <span className="font-heading text-sm font-semibold tracking-tight">AgentsTower</span>
             </a>
 
-            <span className="hidden md:block h-4 w-px bg-zinc-200 dark:bg-zinc-800" aria-hidden="true" />
+            <Separator orientation="vertical" className="hidden md:block h-4" />
 
             <nav aria-label="主导航" className="hidden md:flex items-center gap-1 h-12">
               {navItems.map((item) => {
@@ -687,16 +714,14 @@ export default function App() {
                     type="button"
                     onClick={() => navigateToTab(item.id)}
                     className={`relative flex h-full items-center px-3 text-xs font-medium transition-colors cursor-pointer ${
-                      active
-                        ? "text-zinc-950 dark:text-zinc-50"
-                        : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <span>{item.label}</span>
                     {active && (
                       <span
                         aria-hidden="true"
-                        className="absolute inset-x-1.5 bottom-0 h-[2px] bg-zinc-950 dark:bg-zinc-100"
+                        className="absolute inset-x-1.5 bottom-0 h-[2px] bg-foreground"
                       />
                     )}
                   </button>
@@ -707,111 +732,79 @@ export default function App() {
 
           <div className="flex items-center gap-2 shrink-0">
             {store.items.length > 0 && (
-              <div className="flex items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50/70 py-1 pl-1.5 pr-2 dark:border-zinc-800 dark:bg-[#09090B]">
-                {user?.gavatar ? (
-                  <img src={user.gavatar} alt="" className="h-5 w-5 rounded object-cover" />
-                ) : (
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-zinc-200 font-mono text-[10px] font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-                    {towerAccountLabel.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-                <select
-                  aria-label="切换当前 Tower 账号"
-                  value={creds?.id || ""}
-                  onChange={(event) => handleSelectAccount(event.target.value)}
-                  className="max-w-[120px] sm:max-w-[160px] bg-transparent text-xs font-medium text-zinc-800 outline-none cursor-pointer dark:text-zinc-200"
-                >
+              <Select value={creds?.id || ""} onValueChange={handleSelectAccount}>
+                <SelectTrigger size="sm" aria-label="切换当前 Tower 账号" className="max-w-[160px] text-xs">
+                  {user?.gavatar ? (
+                    <img src={user.gavatar} alt="" className="size-4 rounded object-cover" />
+                  ) : (
+                    <span className="flex size-4 shrink-0 items-center justify-center rounded bg-muted font-mono text-[10px] font-semibold">
+                      {towerAccountLabel.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <SelectValue>{towerAccountLabel}</SelectValue>
+                </SelectTrigger>
+                <SelectContent align="end">
                   {store.items.map((item) => (
-                    <option key={item.id} value={item.id} className="bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
+                    <SelectItem key={item.id} value={item.id}>
                       {item.user?.nickname || item.user?.email || item.token?.email || "已授权成员"}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
+                </SelectContent>
+              </Select>
             )}
 
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               title={themeMeta.title}
               onClick={() => setTheme(themeMeta.next)}
-              className={`${UI.btnSecondary} px-2.5 py-1`}
             >
               {theme === "light" ? (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-                </svg>
+                <SunIcon />
               ) : theme === "dark" ? (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
+                <MoonIcon />
               ) : (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="2" y="3" width="20" height="14" rx="2" />
-                  <line x1="8" y1="21" x2="16" y2="21" />
-                  <line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
+                <DesktopIcon />
               )}
               <span className="hidden sm:inline">{themeMeta.label}</span>
-            </button>
+            </Button>
 
-            <button
-              type="button"
-              title={displayName}
-              popoverTarget="panel-user-actions"
-              className={`${UI.btnSecondary} px-2.5 py-1`}
-            >
-              <span
-                aria-hidden="true"
-                className="flex h-4 w-4 items-center justify-center rounded bg-zinc-950 font-mono text-[10px] font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950"
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button type="button" variant="outline" size="sm" title={displayName} />}
               >
-                {displayName.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="max-w-[90px] truncate hidden sm:inline">{displayName}</span>
-            </button>
-
-            <div
-              id="panel-user-actions"
-              popover="auto"
-              className="fixed inset-auto top-13 right-4 sm:right-6 m-0 w-44 rounded-lg border border-zinc-200 bg-white p-1 text-zinc-700 shadow-lg space-y-0.5 dark:border-zinc-800 dark:bg-[#111113] dark:text-zinc-300"
-            >
-              <div className="border-b border-zinc-100 px-2.5 py-1.5 dark:border-zinc-800">
-                <div className="truncate text-xs font-medium text-zinc-950 dark:text-zinc-100">{displayName}</div>
-                <div className="text-[11px] text-zinc-400">
-                  {authUser.role === "admin" ? "系统管理员" : "团队成员"}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  closeUserPopover();
-                  setShowPasswordModal(true);
-                }}
-                className="w-full cursor-pointer rounded px-2.5 py-1.5 text-left text-xs font-medium hover:bg-zinc-100 hover:text-zinc-950 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              >
-                修改密码
-              </button>
-              <button
-                type="button"
-                onClick={handleSignOutUser}
-                className="w-full cursor-pointer rounded px-2.5 py-1.5 text-left text-xs font-medium hover:bg-zinc-100 hover:text-zinc-950 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              >
-                切换用户
-              </button>
-              <button
-                type="button"
-                onClick={handleSignOutAllDevices}
-                className="w-full cursor-pointer rounded px-2.5 py-1.5 text-left text-xs font-medium text-red-600 hover:bg-red-500/10 dark:text-red-400"
-              >
-                登出全部设备
-              </button>
-            </div>
+                <span
+                  aria-hidden="true"
+                  className="flex size-4 items-center justify-center rounded bg-primary font-mono text-[10px] font-semibold text-primary-foreground"
+                >
+                  {displayName.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="max-w-[90px] truncate hidden sm:inline">{displayName}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="space-y-0.5">
+                    <div className="truncate text-xs font-medium text-foreground">{displayName}</div>
+                    <div className="text-[11px] font-normal text-muted-foreground">
+                      {authUser.role === "admin" ? "系统管理员" : "团队成员"}
+                    </div>
+                  </DropdownMenuLabel>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setShowPasswordModal(true)}>修改密码</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOutUser}>切换用户</DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={handleSignOutAllDevices}>
+                  登出全部设备
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
         <nav
           aria-label="移动端主导航"
-          className="flex md:hidden items-center gap-1 overflow-x-auto border-t border-zinc-200 px-3 dark:border-zinc-800"
+          className="flex md:hidden items-center gap-1 overflow-x-auto border-t px-3"
         >
           {navItems.map((item) => {
             const active = activeTab === item.id;
@@ -821,16 +814,14 @@ export default function App() {
                 type="button"
                 onClick={() => navigateToTab(item.id)}
                 className={`relative shrink-0 px-3 py-2 text-xs font-medium transition-colors cursor-pointer ${
-                  active
-                    ? "text-zinc-950 dark:text-zinc-50"
-                    : "text-zinc-500 dark:text-zinc-400"
+                  active ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
                 <span>{item.label}</span>
                 {active && (
                   <span
                     aria-hidden="true"
-                    className="absolute inset-x-1.5 bottom-0 h-[2px] bg-zinc-950 dark:bg-zinc-100"
+                    className="absolute inset-x-1.5 bottom-0 h-[2px] bg-foreground"
                   />
                 )}
               </button>
@@ -857,482 +848,482 @@ export default function App() {
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-5 sm:px-6 sm:py-6 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-200 pb-4 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="text-lg font-semibold tracking-tight text-zinc-950 dark:text-zinc-100">
-                      凭据中心
-                    </h1>
-                    <span className={authUser.role === "admin" ? UI.badgeAdmin : UI.badgeNeutral}>
+                    <h1 className="font-heading text-lg font-semibold tracking-tight">凭据中心</h1>
+                    <Badge variant={authUser.role === "admin" ? "default" : "secondary"}>
                       {authUser.role === "admin" ? "系统管理员" : "普通用户"}
-                    </span>
-                    <span className="font-mono text-xs text-zinc-400 dark:text-zinc-500">
+                    </Badge>
+                    <span className="font-mono text-xs text-muted-foreground">
                       @{authUser.username || displayName}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     成员 Tower OAuth 2.0 凭据托管至服务端 SQLite，并签发专属 AI Agent MCP 鉴权密钥。
                   </p>
                 </div>
-                <button type="button" onClick={handleStartLogin} className={UI.btnPrimary}>
-                  <span aria-hidden="true">+</span>
+                <Button type="button" size="sm" onClick={handleStartLogin}>
+                  <PlusIcon />
                   绑定 Tower 账号
-                </button>
+                </Button>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-lg border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-px overflow-hidden rounded-xl border bg-border">
                 {telemetryCells.map((cell) => (
-                  <div key={cell.label} className="bg-white px-4 py-3.5 dark:bg-[#111113]">
-                    <div className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                      {cell.label}
-                    </div>
-                    <div className="mt-1 truncate text-base font-semibold tracking-tight tabular-nums text-zinc-950 dark:text-zinc-100">
+                  <div key={cell.label} className="bg-card px-4 py-3.5">
+                    <div className="text-[11px] font-medium text-muted-foreground">{cell.label}</div>
+                    <div className="mt-1 truncate font-heading text-base font-semibold tracking-tight tabular-nums">
                       {cell.value}
                     </div>
-                    <div className="mt-0.5 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
-                      {cell.sub}
-                    </div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{cell.sub}</div>
                   </div>
                 ))}
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-                <div className={`xl:col-span-8 min-w-0 ${UI.panel} p-4 sm:p-5 space-y-4`}>
-                  {store.items.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 border-b border-zinc-100 pb-3.5 dark:border-zinc-800/80">
-                      <span className="mr-1 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                        已绑定账号
-                      </span>
-                      {store.items.map((item) => {
-                        const active = item.id === creds?.id;
-                        const label =
-                          item.user?.nickname || item.user?.email || item.token?.email || "已授权成员";
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => handleSelectAccount(item.id)}
-                            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors cursor-pointer ${
-                              active
-                                ? "border-zinc-950 bg-zinc-950 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950"
-                                : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-300 dark:hover:border-zinc-700"
-                            }`}
-                          >
-                            {item.user?.gavatar && (
-                              <img src={item.user.gavatar} alt="" className="h-3.5 w-3.5 rounded-sm object-cover" />
-                            )}
-                            <span>{label}</span>
-                          </button>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        onClick={handleStartLogin}
-                        className={`${UI.btnSecondary} px-2.5 py-1`}
-                      >
-                        <span aria-hidden="true">+</span>
-                        添加账号
-                      </button>
-                    </div>
-                  )}
-
-                  {error && <StatusBanner tone="error">{error}</StatusBanner>}
-
-                  {otpCode ? (
-                    <form
-                      className="space-y-3 rounded-md border border-amber-500/30 bg-amber-500/8 p-4"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        exchangeCode("/oauth2/otp", { code: otpCode, captcha });
-                      }}
-                    >
-                      <div className="text-xs font-medium text-zinc-900 dark:text-zinc-100">
-                        该账号开启了两步认证，请输入 Tower 发送的验证码：
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          type="text"
-                          value={captcha}
-                          onChange={(event) => setCaptcha(event.target.value)}
-                          placeholder="输入验证码"
-                          required
-                          autoFocus
-                          className={`${UI.inputSm} w-56 font-mono`}
-                        />
-                        <button type="submit" disabled={loading} className={UI.btnPrimary}>
-                          提交验证
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setOtpCode("");
-                            setCaptcha("");
-                          }}
-                          className={UI.btnSecondary}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </form>
-                  ) : awaitingCode ? (
-                    <form
-                      className="space-y-3 rounded-md border border-zinc-300 bg-zinc-50/80 p-4 dark:border-zinc-700 dark:bg-[#09090B]"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        exchangeCode("/oauth2/code", { code: extractCode(codeInput) });
-                      }}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                        <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                          在新打开的 Tower 页面完成登录并同意授权后，复制页面显示的授权码（code）：
-                        </span>
-                        <a
-                          href="/login"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-100"
-                        >
-                          重新打开授权页
-                        </a>
-                      </div>
-                      <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        将 Tower 页面中的授权码粘贴到下方，点击「获取凭据」换取 Token（如自动登录了旧账号，请先在 tower.im 退出或使用无痕窗口）。
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          type="text"
-                          value={codeInput}
-                          onChange={(event) => setCodeInput(event.target.value)}
-                          placeholder="粘贴授权码 code"
-                          required
-                          autoFocus
-                          className={`${UI.inputSm} min-w-60 flex-1 font-mono`}
-                        />
-                        <button type="submit" disabled={loading} className={UI.btnPrimary}>
-                          {loading ? "获取中..." : "获取凭据"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAwaitingCode(false);
-                            setCodeInput("");
-                          }}
-                          className={UI.btnSecondary}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </form>
-                  ) : null}
-
-                  {token?.access_token ? (
-                    <div className="space-y-4">
-                      <div className={`${UI.subPanel} flex flex-wrap items-center justify-between gap-3 p-3.5`}>
-                        <div className="flex items-center gap-3 min-w-0">
-                          {user?.gavatar ? (
-                            <img
-                              src={user.gavatar}
-                              alt="avatar"
-                              className="h-9 w-9 rounded-md border border-zinc-200 object-cover shrink-0 dark:border-zinc-700"
-                            />
-                          ) : (
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-zinc-200 bg-white font-mono text-xs font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
-                              {towerAccountLabel.slice(0, 1).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="truncate text-sm font-semibold text-zinc-950 dark:text-zinc-100">
-                                {user?.nickname || token.email || "已授权成员"}
-                              </span>
-                              {remaining && (
-                                <span
-                                  className={
-                                    remaining.expired
-                                      ? UI.badgeDanger
-                                      : remaining.soon
-                                        ? UI.badgeWarning
-                                        : UI.badgeSuccess
-                                  }
-                                >
-                                  <span
-                                    className={`h-1.5 w-1.5 rounded-full ${
-                                      remaining.expired
-                                        ? "bg-red-500"
-                                        : remaining.soon
-                                          ? "bg-amber-500"
-                                          : "bg-emerald-500"
-                                    }`}
-                                  />
-                                  <span className="tabular-nums">{remaining.label}</span>
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
-                              {[user?.email || token.email, expiryText].filter(Boolean).join(" · ")}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setShowSecrets((prev) => !prev)}
-                            className={UI.btnSecondary}
-                          >
-                            {showSecrets ? "隐藏明文" : "显示明文"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={loading}
-                            onClick={handleVerify}
-                            className={UI.btnSecondary}
-                          >
-                            检测有效性
-                          </button>
-                          <button
-                            type="button"
-                            disabled={loading || !token.refresh_token}
-                            onClick={() => (isTokenExpired ? handleRefresh() : setConfirmAction("refresh"))}
-                            className={UI.btnPrimary}
-                          >
-                            刷新 Token
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmAction("logout")}
-                            className={UI.btnSecondary}
-                          >
-                            登出当前账号
-                          </button>
-                          {store.items.length > 1 && (
-                            <button
+                <Card className="xl:col-span-8 min-w-0">
+                  <CardContent className="space-y-4">
+                    {store.items.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 border-b pb-3.5">
+                        <span className="mr-1 text-xs font-medium text-muted-foreground">已绑定账号</span>
+                        {store.items.map((item) => {
+                          const active = item.id === creds?.id;
+                          const label =
+                            item.user?.nickname || item.user?.email || item.token?.email || "已授权成员";
+                          return (
+                            <Button
+                              key={item.id}
                               type="button"
-                              onClick={() => setConfirmAction("clear")}
-                              className={UI.btnDangerOutline}
+                              size="sm"
+                              variant={active ? "default" : "outline"}
+                              onClick={() => handleSelectAccount(item.id)}
                             >
-                              清空全部
-                            </button>
-                          )}
-                        </div>
+                              {item.user?.gavatar && (
+                                <img src={item.user.gavatar} alt="" className="size-3.5 rounded-sm object-cover" />
+                              )}
+                              <span>{label}</span>
+                            </Button>
+                          );
+                        })}
+                        <Button type="button" size="sm" variant="outline" onClick={handleStartLogin}>
+                          <PlusIcon />
+                          添加账号
+                        </Button>
                       </div>
+                    )}
 
-                      {status && <StatusBanner tone="success">{status}</StatusBanner>}
+                    {error && <StatusBanner tone="error">{error}</StatusBanner>}
 
-                      <div className="rounded-md border border-zinc-200 bg-white p-4 space-y-3.5 dark:border-zinc-800 dark:bg-[#111113]">
-                        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-3 dark:border-zinc-800/80">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h2 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">
-                                Agent MCP 接入配置
-                              </h2>
-                              <span className={`${UI.badgeNeutral} font-mono`}>Streamable HTTP</span>
+                    {otpCode ? (
+                      <form
+                        className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/8 p-4"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          exchangeCode("/oauth2/otp", { code: otpCode, captcha });
+                        }}
+                      >
+                        <div className="text-xs font-medium">
+                          该账号开启了两步认证，请输入 Tower 发送的验证码：
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Input
+                            type="text"
+                            value={captcha}
+                            onChange={(event) => setCaptcha(event.target.value)}
+                            placeholder="输入验证码"
+                            required
+                            autoFocus
+                            className="w-56 font-mono text-xs"
+                          />
+                          <Button type="submit" size="sm" disabled={loading}>
+                            提交验证
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setOtpCode("");
+                              setCaptcha("");
+                            }}
+                          >
+                            取消
+                          </Button>
+                        </div>
+                      </form>
+                    ) : awaitingCode ? (
+                      <form
+                        className="space-y-3 rounded-lg border bg-muted/40 p-4"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          exchangeCode("/oauth2/code", { code: extractCode(codeInput) });
+                        }}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="font-medium">
+                            在新打开的 Tower 页面完成登录并同意授权后，复制页面显示的授权码（code）：
+                          </span>
+                          <a
+                            href="/login"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium underline underline-offset-2 hover:text-foreground text-muted-foreground"
+                          >
+                            重新打开授权页
+                          </a>
+                        </div>
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          将 Tower 页面中的授权码粘贴到下方，点击「获取凭据」换取 Token（如自动登录了旧账号，请先在 tower.im 退出或使用无痕窗口）。
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Input
+                            type="text"
+                            value={codeInput}
+                            onChange={(event) => setCodeInput(event.target.value)}
+                            placeholder="粘贴授权码 code"
+                            required
+                            autoFocus
+                            className="min-w-60 flex-1 font-mono text-xs"
+                          />
+                          <Button type="submit" size="sm" disabled={loading}>
+                            {loading ? "获取中..." : "获取凭据"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setAwaitingCode(false);
+                              setCodeInput("");
+                            }}
+                          >
+                            取消
+                          </Button>
+                        </div>
+                      </form>
+                    ) : null}
+
+                    {token?.access_token ? (
+                      <div className="space-y-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3.5">
+                          <div className="flex items-center gap-3 min-w-0">
+                            {user?.gavatar ? (
+                              <img
+                                src={user.gavatar}
+                                alt="avatar"
+                                className="size-9 rounded-md border object-cover shrink-0"
+                              />
+                            ) : (
+                              <div className="flex size-9 shrink-0 items-center justify-center rounded-md border bg-background font-mono text-xs font-semibold">
+                                {towerAccountLabel.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="truncate text-sm font-semibold">
+                                  {user?.nickname || token.email || "已授权成员"}
+                                </span>
+                                {remaining && (
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      remaining.expired
+                                        ? TONE_BADGE.danger
+                                        : remaining.soon
+                                          ? TONE_BADGE.warning
+                                          : TONE_BADGE.success
+                                    }
+                                  >
+                                    <span
+                                      className={`size-1.5 rounded-full ${
+                                        remaining.expired
+                                          ? "bg-red-500"
+                                          : remaining.soon
+                                            ? "bg-amber-500"
+                                            : "bg-emerald-500"
+                                      }`}
+                                    />
+                                    <span className="tabular-nums">{remaining.label}</span>
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+                                {[user?.email || token.email, expiryText].filter(Boolean).join(" · ")}
+                              </div>
                             </div>
-                            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                              添加到 Claude Code、Codex、Cursor 等客户端后，Agent 可直接调用 Tower 工具，Token 过期由服务端自动续期。
-                            </p>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <button type="button" onClick={handleCopySkillMD} className={UI.btnSecondary}>
-                              {skillCopied ? "已复制 SKILL.md" : "复制 SKILL.md"}
-                            </button>
-                            <a
-                              href="/api/skill.md?download=1"
-                              download="SKILL.md"
-                              className={UI.btnSecondary}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowSecrets((prev) => !prev)}
                             >
-                              下载 SKILL.md
-                            </a>
-                            {mcpKey ? (
-                              <button
+                              {showSecrets ? "隐藏明文" : "显示明文"}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={loading}
+                              onClick={handleVerify}
+                            >
+                              检测有效性
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={loading || !token.refresh_token}
+                              onClick={() => (isTokenExpired ? handleRefresh() : setConfirmAction("refresh"))}
+                            >
+                              刷新 Token
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setConfirmAction("logout")}
+                            >
+                              登出当前账号
+                            </Button>
+                            {store.items.length > 1 && (
+                              <Button
                                 type="button"
-                                disabled={loading}
-                                onClick={() => setConfirmAction("rotate_mcp")}
-                                className={UI.btnDangerOutline}
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => setConfirmAction("clear")}
                               >
-                                重置 MCP 密钥
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                disabled={loading}
-                                onClick={handleSyncCurrent}
-                                className={UI.btnPrimary}
-                              >
-                                同步生成 MCP 密钥
-                              </button>
+                                清空全部
+                              </Button>
                             )}
                           </div>
                         </div>
 
-                        {mcpKey && (
-                          <CopyField
-                            label="AGENTS_TOWER_API_KEY（服务端内部鉴权密钥）"
-                            value={mcpKey}
-                            displayValue={maskIfHidden(mcpKey)}
-                            heightClass="h-11"
-                          />
-                        )}
+                        {status && <StatusBanner tone="success">{status}</StatusBanner>}
 
-                        <CopyField
-                          label="mcpServers 客户端配置（直接粘贴到 mcp.json）"
-                          value={mcpConfigSnippet}
-                          displayValue={maskIfHidden(mcpConfigSnippet)}
-                          heightClass="min-h-44 max-h-64"
-                        />
-                      </div>
+                        <Card size="sm" className="shadow-none">
+                          <CardHeader className="border-b">
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="text-sm">Agent MCP 接入配置</CardTitle>
+                              <Badge variant="secondary" className="font-mono">
+                                Streamable HTTP
+                              </Badge>
+                            </div>
+                            <CardDescription className="text-xs">
+                              添加到 Claude Code、Codex、Cursor 等客户端后，Agent 可直接调用 Tower 工具，Token 过期由服务端自动续期。
+                            </CardDescription>
+                            <CardAction className="flex flex-wrap items-center gap-1.5">
+                              <Button type="button" variant="outline" size="sm" onClick={handleCopySkillMD}>
+                                {skillCopied ? <CheckIcon /> : <CopyIcon />}
+                                {skillCopied ? "已复制 SKILL.md" : "复制 SKILL.md"}
+                              </Button>
+                              <a
+                                href="/api/skill.md?download=1"
+                                download="SKILL.md"
+                                className={buttonVariants({ variant: "outline", size: "sm" })}
+                              >
+                                <DownloadSimpleIcon />
+                                下载 SKILL.md
+                              </a>
+                              {mcpKey ? (
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  disabled={loading}
+                                  onClick={() => setConfirmAction("rotate_mcp")}
+                                >
+                                  重置 MCP 密钥
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={loading}
+                                  onClick={handleSyncCurrent}
+                                >
+                                  同步生成 MCP 密钥
+                                </Button>
+                              )}
+                            </CardAction>
+                          </CardHeader>
 
-                      <details className="group rounded-md border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-[#09090B]">
-                        <summary className="flex list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-zinc-600 hover:text-zinc-950 cursor-pointer select-none dark:text-zinc-400 dark:hover:text-zinc-100 [&::-webkit-details-marker]:hidden">
-                          <span>原始 OAuth 凭据详情（Access / Refresh Token、.env、curl）</span>
-                          <svg
-                            className="h-3.5 w-3.5 shrink-0 text-zinc-400 transition-transform group-open:rotate-180"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                          >
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </summary>
-                        <div className="space-y-3 border-t border-zinc-200 p-4 dark:border-zinc-800">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <CardContent className="space-y-3.5">
+                            {mcpKey && (
+                              <CopyField
+                                label="AGENTS_TOWER_API_KEY（服务端内部鉴权密钥）"
+                                value={mcpKey}
+                                displayValue={maskIfHidden(mcpKey)}
+                                heightClass="h-11"
+                              />
+                            )}
+
                             <CopyField
-                              label="Access Token"
-                              value={token.access_token}
-                              displayValue={maskIfHidden(token.access_token)}
-                              heightClass="h-16"
+                              label="mcpServers 客户端配置（直接粘贴到 mcp.json）"
+                              value={mcpConfigSnippet}
+                              displayValue={maskIfHidden(mcpConfigSnippet)}
+                              heightClass="min-h-44 max-h-64"
                             />
+                          </CardContent>
+                        </Card>
+
+                        <details className="group rounded-lg border bg-muted/20">
+                          <summary className="flex list-none items-center justify-between gap-2 px-4 py-3 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none [&::-webkit-details-marker]:hidden">
+                            <span>原始 OAuth 凭据详情（Access / Refresh Token、.env、curl）</span>
+                            <svg
+                              className="size-3.5 shrink-0 transition-transform group-open:rotate-180"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          </summary>
+                          <div className="space-y-3 border-t p-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <CopyField
+                                label="Access Token"
+                                value={token.access_token}
+                                displayValue={maskIfHidden(token.access_token)}
+                                heightClass="h-16"
+                              />
+                              <CopyField
+                                label="Refresh Token"
+                                value={token.refresh_token || "(无)"}
+                                displayValue={token.refresh_token ? maskIfHidden(token.refresh_token) : "(无)"}
+                                heightClass="h-16"
+                              />
+                            </div>
                             <CopyField
-                              label="Refresh Token"
-                              value={token.refresh_token || "(无)"}
-                              displayValue={token.refresh_token ? maskIfHidden(token.refresh_token) : "(无)"}
-                              heightClass="h-16"
+                              label="Authorization 请求头"
+                              value={`Bearer ${token.access_token}`}
+                              displayValue={maskIfHidden(`Bearer ${token.access_token}`)}
+                              heightClass="h-12"
                             />
-                          </div>
-                          <CopyField
-                            label="Authorization 请求头"
-                            value={`Bearer ${token.access_token}`}
-                            displayValue={maskIfHidden(`Bearer ${token.access_token}`)}
-                            heightClass="h-12"
-                          />
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <CopyField
+                                label=".env 变量"
+                                value={envSnippet}
+                                displayValue={maskIfHidden(envSnippet)}
+                                heightClass="h-16"
+                              />
+                              <CopyField
+                                label="curl 测试命令"
+                                value={curlSnippet}
+                                displayValue={maskIfHidden(curlSnippet)}
+                                heightClass="h-16"
+                              />
+                            </div>
                             <CopyField
-                              label=".env 变量"
-                              value={envSnippet}
-                              displayValue={maskIfHidden(envSnippet)}
-                              heightClass="h-16"
+                              label="完整 JSON 凭据"
+                              value={fullJSON}
+                              displayValue={maskIfHidden(fullJSON)}
+                              heightClass="h-40"
                             />
-                            <CopyField
-                              label="curl 测试命令"
-                              value={curlSnippet}
-                              displayValue={maskIfHidden(curlSnippet)}
-                              heightClass="h-16"
-                            />
-                          </div>
-                          <CopyField
-                            label="完整 JSON 凭据"
-                            value={fullJSON}
-                            displayValue={maskIfHidden(fullJSON)}
-                            heightClass="h-40"
-                          />
-                          <div className="rounded-md border border-zinc-200 bg-white px-3.5 py-2.5 text-xs dark:border-zinc-800 dark:bg-[#111113]">
-                            <div className="font-medium text-zinc-800 dark:text-zinc-200">官方 API 文档</div>
-                            <div className="mt-1 flex flex-col gap-1 font-mono text-[11px]">
-                              <a
-                                href="https://docs.tower.im/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="break-all text-zinc-600 underline underline-offset-2 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100"
-                              >
-                                https://docs.tower.im/
-                              </a>
-                              <a
-                                href="https://github.com/mycolorway/tower-api-document"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="break-all text-zinc-600 underline underline-offset-2 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-100"
-                              >
-                                https://github.com/mycolorway/tower-api-document
-                              </a>
+                            <div className="rounded-lg border bg-card px-3.5 py-2.5 text-xs">
+                              <div className="font-medium">官方 API 文档</div>
+                              <div className="mt-1 flex flex-col gap-1 font-mono text-[11px]">
+                                <a
+                                  href="https://docs.tower.im/"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                >
+                                  https://docs.tower.im/
+                                </a>
+                                <a
+                                  href="https://github.com/mycolorway/tower-api-document"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="break-all text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                >
+                                  https://github.com/mycolorway/tower-api-document
+                                </a>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </details>
-                    </div>
-                  ) : (
-                    !awaitingCode &&
-                    !otpCode && (
-                      <div className="rounded-md border border-dashed border-zinc-300 p-8 text-center space-y-3.5 dark:border-zinc-700">
-                        <p className="mx-auto max-w-md text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                          点击下方按钮会打开 Tower OAuth 授权页；完成登录并授权后，即可在本页管理凭据、获取{" "}
-                          <code className="font-mono text-zinc-800 dark:text-zinc-200">at_sk-...</code> 密钥并接入 AI Agent。
-                        </p>
-                        <button type="button" onClick={handleStartLogin} className={UI.btnPrimary}>
-                          登录 Tower 账号
-                        </button>
+                        </details>
                       </div>
-                    )
-                  )}
-                </div>
+                    ) : (
+                      !awaitingCode &&
+                      !otpCode && (
+                        <div className="rounded-lg border border-dashed p-8 text-center space-y-3.5">
+                          <p className="mx-auto max-w-md text-xs leading-relaxed text-muted-foreground">
+                            点击下方按钮会打开 Tower OAuth 授权页；完成登录并授权后，即可在本页管理凭据、获取{" "}
+                            <code className="font-mono text-foreground">at_sk-...</code> 密钥并接入 AI Agent。
+                          </p>
+                          <Button type="button" onClick={handleStartLogin}>
+                            登录 Tower 账号
+                          </Button>
+                        </div>
+                      )
+                    )}
+                  </CardContent>
+                </Card>
 
-                <aside className={`xl:col-span-4 min-w-0 ${UI.panel} p-4 sm:p-5 space-y-4`}>
-                  <div className="border-b border-zinc-100 pb-3 dark:border-zinc-800/80">
-                    <h2 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">使用说明</h2>
-                  </div>
-                  <ol className="space-y-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-                    <li className="flex gap-2.5">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-200 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                        1
-                      </span>
-                      <span>
-                        登录 Tower 账号并完成授权后，AgentsTower 会将 OAuth 凭据加密保存至服务端 SQLite，并签发专属内部鉴权密钥{" "}
-                        <code className="rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 font-mono text-[11px] text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                          AGENTS_TOWER_API_KEY
-                        </code>
-                        。
-                      </span>
-                    </li>
-                    <li className="flex gap-2.5">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-200 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                        2
-                      </span>
-                      <span>
-                        复制左侧「mcpServers 客户端配置」到 Claude Code、Codex、Cursor 等客户端，即可通过 Streamable HTTP MCP 调用全部 Tower 工具。
-                      </span>
-                    </li>
-                    <li className="flex gap-2.5">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-200 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                        3
-                      </span>
-                      <span>
-                        Agent 调用 MCP 时若 Access Token 过期，服务端会自动通过 Refresh Token 静默续期，无需人工干预。
-                      </span>
-                    </li>
-                    <li className="flex gap-2.5">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-zinc-200 font-mono text-[10px] font-semibold text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-                        4
-                      </span>
-                      <span>
-                        直接调试原始 Tower REST API 时，可在请求头携带{" "}
-                        <code className="rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 font-mono text-[11px] text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
-                          Authorization: Bearer &lt;access_token&gt;
-                        </code>
-                        。
-                      </span>
-                    </li>
-                  </ol>
-                </aside>
+                <Card className="xl:col-span-4 min-w-0">
+                  <CardHeader className="border-b">
+                    <CardTitle className="text-sm">使用说明</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ol className="space-y-3 text-xs leading-relaxed text-muted-foreground">
+                      <li className="flex gap-2.5">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
+                          1
+                        </span>
+                        <span>
+                          登录 Tower 账号并完成授权后，AgentsTower 会将 OAuth 凭据加密保存至服务端 SQLite，并签发专属内部鉴权密钥{" "}
+                          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                            AGENTS_TOWER_API_KEY
+                          </code>
+                          。
+                        </span>
+                      </li>
+                      <li className="flex gap-2.5">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
+                          2
+                        </span>
+                        <span>
+                          复制左侧「mcpServers 客户端配置」到 Claude Code、Codex、Cursor 等客户端，即可通过 Streamable HTTP MCP 调用全部 Tower 工具。
+                        </span>
+                      </li>
+                      <li className="flex gap-2.5">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
+                          3
+                        </span>
+                        <span>
+                          Agent 调用 MCP 时若 Access Token 过期，服务端会自动通过 Refresh Token 静默续期，无需人工干预。
+                        </span>
+                      </li>
+                      <li className="flex gap-2.5">
+                        <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] font-semibold text-foreground">
+                          4
+                        </span>
+                        <span>
+                          直接调试原始 Tower REST API 时，可在请求头携带{" "}
+                          <code className="rounded border bg-muted px-1 py-0.5 font-mono text-[11px] text-foreground">
+                            Authorization: Bearer &lt;access_token&gt;
+                          </code>
+                          。
+                        </span>
+                      </li>
+                    </ol>
+                  </CardContent>
+                </Card>
               </div>
             </div>
           </div>
         )}
       </main>
 
-      <ModalDialog
+      <ConfirmDialog
         open={Boolean(confirmAction)}
-        onClose={() => setConfirmAction("")}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction("");
+        }}
         title={
           confirmAction === "refresh"
             ? "确认刷新 Token"
@@ -1342,92 +1333,83 @@ export default function App() {
                 ? "确认登出当前账号"
                 : "确认清空全部账号"
         }
-      >
-        <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-          {confirmAction === "refresh"
+        description={
+          confirmAction === "refresh"
             ? "当前 Access Token 尚未过期，刷新后旧 Token 将立即失效。是否继续刷新？"
             : confirmAction === "rotate_mcp"
               ? "重置后旧的 AGENTS_TOWER_API_KEY 将立即失效，所有已配置该密钥的 AI Agent 需更新新密钥后才能继续调用。"
               : confirmAction === "logout"
                 ? `确定移除「${user?.nickname || user?.email || token?.email || "当前账号"}」的本地与服务端凭据吗？该账号关联的 MCP 密钥也将一并失效。`
-                : `确定清空所有（${store.items.length} 个）账号的本地与服务端凭据吗？该操作不可恢复。`}
-        </p>
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={() => setConfirmAction("")} className={UI.btnSecondary}>
-            取消
-          </button>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={() => {
-              if (confirmAction === "refresh") handleRefresh();
-              else if (confirmAction === "rotate_mcp") handleRotateMCPKey();
-              else if (confirmAction === "logout") handleLogoutCurrent();
-              else handleClearAll();
-            }}
-            className={confirmAction === "refresh" ? UI.btnPrimary : UI.btnDanger}
-          >
-            {confirmAction === "refresh"
-              ? "确认刷新"
-              : confirmAction === "rotate_mcp"
-                ? "确认重置"
-                : confirmAction === "logout"
-                  ? "确认登出"
-                  : "确认清空"}
-          </button>
-        </div>
-      </ModalDialog>
+                : `确定清空所有（${store.items.length} 个）账号的本地与服务端凭据吗？该操作不可恢复。`
+        }
+        confirmLabel={
+          confirmAction === "refresh"
+            ? "确认刷新"
+            : confirmAction === "rotate_mcp"
+              ? "确认重置"
+              : confirmAction === "logout"
+                ? "确认登出"
+                : "确认清空"
+        }
+        confirmVariant={confirmAction === "refresh" ? "default" : "destructive"}
+        disabled={loading}
+        onConfirm={() => {
+          if (confirmAction === "refresh") handleRefresh();
+          else if (confirmAction === "rotate_mcp") handleRotateMCPKey();
+          else if (confirmAction === "logout") handleLogoutCurrent();
+          else handleClearAll();
+        }}
+      />
 
-      <ModalDialog
-        open={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
-        title="修改当前账号密码"
-      >
-        <form onSubmit={handleChangeSelfPassword} className="space-y-4">
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <label htmlFor="self-current-pw" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                当前密码
-              </label>
-              <input
-                id="self-current-pw"
-                type="password"
-                required
-                autoFocus
-                autoComplete="current-password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="输入当前登录密码"
-                className={UI.input}
-              />
+      <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>修改当前账号密码</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleChangeSelfPassword} className="space-y-4">
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="self-current-pw" className="text-xs">
+                  当前密码
+                </Label>
+                <Input
+                  id="self-current-pw"
+                  type="password"
+                  required
+                  autoFocus
+                  autoComplete="current-password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="输入当前登录密码"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="self-new-pw" className="text-xs">
+                  新密码（至少 6 位）
+                </Label>
+                <Input
+                  id="self-new-pw"
+                  type="password"
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="输入新密码"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label htmlFor="self-new-pw" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                新密码（至少 6 位）
-              </label>
-              <input
-                id="self-new-pw"
-                type="password"
-                required
-                minLength={6}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="输入新密码"
-                className={UI.input}
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <button type="button" onClick={() => setShowPasswordModal(false)} className={UI.btnSecondary}>
-              取消
-            </button>
-            <button type="submit" disabled={loading} className={UI.btnPrimary}>
-              {loading ? "保存中..." : "确认修改"}
-            </button>
-          </div>
-        </form>
-      </ModalDialog>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowPasswordModal(false)}>
+                取消
+              </Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "保存中..." : "确认修改"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

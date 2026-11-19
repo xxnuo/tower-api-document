@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { HighlightedJSON, toOptions } from "./ApiExplorer.jsx";
-import { ModalDialog, SegmentedTabs, StatusBanner, UI } from "./ui.jsx";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 function resolveToolGroup(name) {
   if (name === "tower_get_current_user") return "用户";
@@ -496,59 +511,59 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
         ),
       };
     }
+    const parsed = tryParseJSON(callResult.text);
+    if (parsed.ok) {
+      return { isJSON: true, text: JSON.stringify(parsed.val, null, 2) };
+    }
     return { isJSON: false, text: callResult.text };
   }, [callResult, resultView]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-12">
-      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-[#111113]">
-        <div className="shrink-0 p-3.5 border-b border-zinc-200 dark:border-zinc-800 space-y-2.5">
+      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r bg-card">
+        <div className="shrink-0 p-3.5 border-b space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               MCP 工具目录 (tools/list)
             </h2>
-            <span className={`${UI.badgeNeutral} font-mono tabular-nums`}>
+            <Badge variant="secondary" className="font-mono tabular-nums">
               {tools.length}
-            </span>
+            </Badge>
           </div>
-          <input
+          <Input
             type="text"
             aria-label="搜索 MCP 工具"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索工具名、标题或功能描述..."
-            className={UI.inputSm}
+            className="text-xs"
           />
-          <SegmentedTabs
-            fullWidth
-            size="xs"
-            value={modeFilter}
-            onChange={setModeFilter}
-            options={[
-              { id: "all", label: "全部" },
-              { id: "read", label: "只读" },
-              { id: "write", label: "写入" },
-              { id: "danger", label: "删除" },
-            ]}
-          />
+          <Tabs value={modeFilter} onValueChange={setModeFilter}>
+            <TabsList className="w-full h-7">
+              <TabsTrigger value="all" className="text-[11px]">全部</TabsTrigger>
+              <TabsTrigger value="read" className="text-[11px]">只读</TabsTrigger>
+              <TabsTrigger value="write" className="text-[11px]">写入</TabsTrigger>
+              <TabsTrigger value="danger" className="text-[11px]">删除</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         <div className="max-h-64 lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto p-2.5 space-y-3">
           {connecting ? (
-            <p className="py-6 text-center text-xs text-zinc-400">正在握手连接 /mcp 并拉取工具列表...</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">正在握手连接 /mcp 并拉取工具列表...</p>
           ) : !effectiveKey ? (
             <div className="py-6 px-3 text-center space-y-2.5">
-              <p className="text-xs text-zinc-400">尚未获取到 AGENTS_TOWER_API_KEY</p>
+              <p className="text-xs text-muted-foreground">尚未获取到 AGENTS_TOWER_API_KEY</p>
               {onGoCreds && (
-                <button type="button" onClick={onGoCreds} className={UI.btnPrimary}>
+                <Button type="button" size="sm" onClick={onGoCreds}>
                   前往凭据中心绑定账号
-                </button>
+                </Button>
               )}
             </div>
           ) : (
             groupedTools.map((group) => (
               <div key={group.name} className="space-y-1">
-                <div className="sticky top-0 z-10 bg-white/95 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-[#111113]/95 dark:text-zinc-500">
+                <div className="sticky top-0 z-10 bg-card/95 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {group.name}
                 </div>
                 {group.items.map((tool) => {
@@ -558,34 +573,38 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
                   const isRead = Boolean(ann.readOnlyHint);
                   const unavail = unavailableTools[`${keyTag}::${tool.name}`];
                   const badgeCls = isDanger
-                    ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
+                    ? TONE_BADGE.danger
                     : isRead
-                      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300";
+                      ? TONE_BADGE.success
+                      : TONE_BADGE.info;
                   const badgeText = isDanger ? "删除" : isRead ? "只读" : "写入";
                   return (
                     <button
                       key={tool.name}
                       type="button"
                       onClick={() => selectTool(tool)}
-                      className={`w-full text-left rounded-md border px-2.5 py-2 transition-colors cursor-pointer ${
+                      className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors cursor-pointer ${
                         active
-                          ? "border-zinc-900 bg-zinc-100/80 dark:border-zinc-200 dark:bg-zinc-800/70"
-                          : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
+                          ? "border-foreground bg-muted/70"
+                          : "border-transparent hover:bg-muted/40"
                       } ${unavail ? "opacity-65" : ""}`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold shrink-0 ${badgeCls}`}>
+                          <Badge variant="outline" className={`rounded px-1.5 py-0 text-[10px] font-semibold shrink-0 ${badgeCls}`}>
                             {badgeText}
-                          </span>
-                          <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                          </Badge>
+                          <span className="truncate text-xs font-medium text-foreground">
                             {ann.title || tool.name}
                           </span>
                         </div>
-                        {unavail && <span className={UI.badgeDanger}>不可用</span>}
+                        {unavail && (
+                          <Badge variant="outline" className={`shrink-0 ${TONE_BADGE.danger}`}>
+                            不可用
+                          </Badge>
+                        )}
                       </div>
-                      <div className="mt-1 truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                      <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
                         {tool.name}
                       </div>
                     </button>
@@ -595,372 +614,369 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
             ))
           )}
           {effectiveKey && !connecting && groupedTools.length === 0 && !connectError && (
-            <p className="py-6 text-center text-xs text-zinc-400">没有匹配的 MCP 工具</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">没有匹配的 MCP 工具</p>
           )}
         </div>
       </aside>
 
-      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto bg-[#FAFAFB] p-4 sm:p-6 space-y-4 dark:bg-[#09090B]">
-        <div className={`${UI.panel} p-4 space-y-3`}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className={serverMeta ? UI.badgeSuccess : UI.badgeWarning}>
-                <span className={`h-1.5 w-1.5 rounded-full ${serverMeta ? "bg-emerald-500" : "bg-amber-500"}`} />
-                {serverMeta
-                  ? `${serverMeta.name} v${serverMeta.version} · MCP ${serverMeta.protocolVersion}`
-                  : "MCP 未连接"}
-              </span>
-              {mcpKey && (
-                <span className={UI.badgeNeutral}>
-                  绑定账号：{accountLabel}
-                </span>
-              )}
-              {pingLatency !== null && (
-                <span className="font-mono text-[11px] tabular-nums text-zinc-500 dark:text-zinc-400">
-                  ping: {pingLatency} ms
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!effectiveKey || connecting}
-                onClick={handlePing}
-                className={UI.btnSecondary}
-              >
-                Ping 检测
-              </button>
-              <button
-                type="button"
-                disabled={!effectiveKey || connecting}
-                onClick={connectAndLoadTools}
-                className={UI.btnSecondary}
-              >
-                {connecting ? "握手中..." : "重新握手"}
-              </button>
-            </div>
-          </div>
-
-          {!mcpKey && (
-            <div className="space-y-1.5 pt-1">
-              <label htmlFor="mcp-manual-key" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                临时 AGENTS_TOWER_API_KEY（测试未绑定密钥时使用）
-              </label>
-              <input
-                id="mcp-manual-key"
-                type="password"
-                value={manualKey}
-                onChange={(e) => setManualKey(e.target.value)}
-                placeholder="输入 at_sk-... 密钥自动握手加载工具"
-                className={`${UI.inputSm} font-mono`}
-              />
-            </div>
-          )}
-
-          {connectError && <StatusBanner tone="error">MCP 握手失败：{connectError}</StatusBanner>}
-
-          {serverMeta?.instructions && (
-            <details className="group text-xs text-zinc-500 dark:text-zinc-400">
-              <summary className="cursor-pointer select-none font-medium hover:text-zinc-900 dark:hover:text-zinc-200">
-                查看服务端下发给 Agent 的 MCP Instructions 说明
-              </summary>
-              <p className={`mt-2 ${UI.subPanel} p-3 leading-relaxed text-zinc-700 dark:text-zinc-300`}>
-                {serverMeta.instructions}
-              </p>
-            </details>
-          )}
-        </div>
-
-        {activeTool && (
-          <div className={`${UI.panel} p-4 sm:p-5 space-y-4`}>
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-3.5 dark:border-zinc-800/80">
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">
-                    {activeTool.annotations?.title || activeTool.name}
-                  </h3>
-                  <code className={`${UI.badgeNeutral} font-mono`}>
-                    {activeTool.name}
-                  </code>
-                  {currentUnavail && (
-                    <span className={UI.badgeDanger}>
-                      当前账号不可用 · {currentUnavail}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  {activeTool.description}
-                </p>
+      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-4">
+        <Card size="sm">
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <Badge variant="outline" className={serverMeta ? TONE_BADGE.success : TONE_BADGE.warning}>
+                  <span className={`size-1.5 rounded-full ${serverMeta ? "bg-emerald-500" : "bg-amber-500"}`} />
+                  {serverMeta
+                    ? `${serverMeta.name} v${serverMeta.version} · MCP ${serverMeta.protocolVersion}`
+                    : "MCP 未连接"}
+                </Badge>
+                {mcpKey && <Badge variant="secondary">绑定账号：{accountLabel}</Badge>}
+                {pingLatency !== null && (
+                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    ping: {pingLatency} ms
+                  </span>
+                )}
               </div>
 
-              <SegmentedTabs
-                size="sm"
-                value={inputMode}
-                onChange={switchInputMode}
-                options={[
-                  { id: "form", label: "Schema 表单" },
-                  { id: "json", label: "JSON 参数" },
-                ]}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={!effectiveKey || connecting} onClick={handlePing}>
+                  Ping 检测
+                </Button>
+                <Button type="button" variant="outline" size="sm" disabled={!effectiveKey || connecting} onClick={connectAndLoadTools}>
+                  {connecting ? "握手中..." : "重新握手"}
+                </Button>
+              </div>
             </div>
 
-            {inputMode === "json" ? (
-              <div className="space-y-1.5">
-                <label htmlFor="mcp-raw-args" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  tools/call arguments (JSON 对象)
-                </label>
-                <textarea
-                  id="mcp-raw-args"
-                  rows={6}
-                  value={rawArgsText}
-                  onChange={(e) => setRawArgsText(e.target.value)}
-                  placeholder="{}"
-                  className={`${UI.inputSm} font-mono p-3`}
+            {!mcpKey && (
+              <div className="space-y-1.5 pt-1">
+                <Label htmlFor="mcp-manual-key" className="text-xs">
+                  临时 AGENTS_TOWER_API_KEY（测试未绑定密钥时使用）
+                </Label>
+                <Input
+                  id="mcp-manual-key"
+                  type="password"
+                  value={manualKey}
+                  onChange={(e) => setManualKey(e.target.value)}
+                  placeholder="输入 at_sk-... 密钥自动握手加载工具"
+                  className="font-mono text-xs"
                 />
-              </div>
-            ) : schemaEntries.length === 0 ? (
-              <div className="rounded-md border border-dashed border-zinc-200 px-4 py-3 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                该工具无需输入参数，直接点击下方「调用工具」即可执行。
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {schemaEntries.map((field) => {
-                  const val = formValues[field.name] ?? "";
-                  const opts = paramOptions[field.name] || [];
-                  const isWide =
-                    field.type === "object" ||
-                    field.type === "array" ||
-                    field.name === "desc" ||
-                    field.name === "content";
-                  const canReloadOpt =
-                    field.name === "team_id"
-                      ? () => fetchToolOptions("team_id", "tower_list_teams")
-                      : field.name === "todo_id" && String(formValues.todolist_id || "").trim()
-                        ? () =>
-                            fetchToolOptions("todo_id", "tower_list_todos", {
-                              todolist_id: String(formValues.todolist_id).trim(),
-                            })
-                        : field.name === "topic_id" && String(formValues.project_id || "").trim()
-                          ? () =>
-                              fetchToolOptions("topic_id", "tower_list_topics", {
-                                project_id: String(formValues.project_id).trim(),
-                              })
-                          : field.name === "upload_id" && String(formValues.project_id || "").trim()
-                            ? () =>
-                                fetchToolOptions("upload_id", "tower_list_uploads", {
-                                  project_id: String(formValues.project_id).trim(),
-                                })
-                            : null;
-
-                  return (
-                    <div key={field.name} className={`space-y-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                          <code className="font-mono text-zinc-950 dark:text-zinc-100">{field.name}</code>
-                          {field.required && <span className="ml-1 text-red-500">*</span>}
-                          <span className="ml-1.5 font-mono text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
-                            ({field.type})
-                          </span>
-                        </label>
-                        {canReloadOpt && (
-                          <button
-                            type="button"
-                            disabled={fetchingOpt === field.name}
-                            onClick={canReloadOpt}
-                            className="text-[11px] font-medium text-zinc-600 underline-offset-2 hover:text-zinc-950 hover:underline disabled:opacity-50 cursor-pointer dark:text-zinc-400 dark:hover:text-zinc-100"
-                          >
-                            {fetchingOpt === field.name ? "加载中..." : "拉取选项"}
-                          </button>
-                        )}
-                      </div>
-                      {field.description && (
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{field.description}</div>
-                      )}
-
-                      {opts.length > 0 && field.type === "string" && (
-                        <select
-                          aria-label={`选择 ${field.name}`}
-                          value={opts.some((o) => o.id === val) ? val : ""}
-                          onChange={(e) =>
-                            setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
-                          }
-                          className={UI.inputSm}
-                        >
-                          <option value="">下拉选择或下方手动输入（共 {opts.length} 项）</option>
-                          {opts.map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.label} ({o.id})
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {field.type === "boolean" ? (
-                        <select
-                          aria-label={field.name}
-                          value={String(val)}
-                          onChange={(e) =>
-                            setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
-                          }
-                          className={`${UI.inputSm} font-mono`}
-                        >
-                          <option value="">默认（不传）</option>
-                          <option value="true">true</option>
-                          <option value="false">false</option>
-                        </select>
-                      ) : field.type === "object" || field.type === "array" ? (
-                        <textarea
-                          rows={3}
-                          value={val}
-                          onChange={(e) =>
-                            setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
-                          }
-                          placeholder={field.type === "array" ? '["id1", "id2"]' : '{"key": "value"}'}
-                          className={`${UI.inputSm} font-mono p-2.5`}
-                        />
-                      ) : (
-                        <input
-                          type={field.type === "integer" || field.type === "number" ? "number" : "text"}
-                          value={val}
-                          onChange={(e) =>
-                            setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
-                          }
-                          placeholder={
-                            field.name === "page"
-                              ? "默认 1"
-                              : field.name === "page_size"
-                                ? "默认 20，最大 50"
-                                : `输入 ${field.name}`
-                          }
-                          className={`${UI.inputSm} font-mono`}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
               </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="button"
-                disabled={calling || !effectiveKey}
-                onClick={handleInvokeClick}
-                className={isActiveToolDangerous ? UI.btnDanger : UI.btnPrimary}
-              >
-                {calling ? "调用中..." : "调用工具 (tools/call)"}
-              </button>
-              <button
-                type="button"
-                onClick={() => copyText("rpc", JSON.stringify(previewPayload, null, 2))}
-                className={UI.btnSecondary}
-              >
-                {copiedKey === "rpc" ? "已复制 JSON-RPC" : "复制 JSON-RPC"}
-              </button>
-              <button
-                type="button"
-                onClick={() => copyText("curl", mcpCurlCommand)}
-                className={UI.btnSecondary}
-              >
-                {copiedKey === "curl" ? "已复制 curl" : "复制 /mcp curl"}
-              </button>
-              {isActiveToolDangerous && (
-                <span className="text-xs text-red-600 dark:text-red-400">
-                  危险删除工具：调用前将弹出二次确认
-                </span>
-              )}
-            </div>
+            {connectError && <StatusBanner tone="error">MCP 握手失败：{connectError}</StatusBanner>}
 
-            {callError && <StatusBanner tone="error">{callError}</StatusBanner>}
-          </div>
+            {serverMeta?.instructions && (
+              <details className="group text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none font-medium hover:text-foreground">
+                  查看服务端下发给 Agent 的 MCP Instructions 说明
+                </summary>
+                <p className="mt-2 rounded-lg border bg-muted/40 p-3 leading-relaxed text-foreground">
+                  {serverMeta.instructions}
+                </p>
+              </details>
+            )}
+          </CardContent>
+        </Card>
+
+        {activeTool && (
+          <Card>
+            <CardHeader className="border-b">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="text-sm">{activeTool.annotations?.title || activeTool.name}</CardTitle>
+                <Badge variant="secondary" className="font-mono">
+                  {activeTool.name}
+                </Badge>
+                {currentUnavail && (
+                  <Badge variant="outline" className={TONE_BADGE.danger}>
+                    当前账号不可用 · {currentUnavail}
+                  </Badge>
+                )}
+              </div>
+              <CardDescription className="text-xs leading-relaxed">
+                {activeTool.description}
+              </CardDescription>
+              <CardAction>
+                <Tabs value={inputMode} onValueChange={switchInputMode}>
+                  <TabsList className="h-7">
+                    <TabsTrigger value="form" className="text-xs">Schema 表单</TabsTrigger>
+                    <TabsTrigger value="json" className="text-xs">JSON 参数</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </CardAction>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              {inputMode === "json" ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="mcp-raw-args" className="text-xs">
+                    tools/call arguments (JSON 对象)
+                  </Label>
+                  <Textarea
+                    id="mcp-raw-args"
+                    rows={6}
+                    value={rawArgsText}
+                    onChange={(e) => setRawArgsText(e.target.value)}
+                    placeholder="{}"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              ) : schemaEntries.length === 0 ? (
+                <div className="rounded-lg border border-dashed px-4 py-3 text-xs text-muted-foreground">
+                  该工具无需输入参数，直接点击下方「调用工具」即可执行。
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {schemaEntries.map((field) => {
+                    const val = formValues[field.name] ?? "";
+                    const opts = paramOptions[field.name] || [];
+                    const selectedOpt = opts.find((o) => o.id === val);
+                    const isWide =
+                      field.type === "object" ||
+                      field.type === "array" ||
+                      field.name === "desc" ||
+                      field.name === "content";
+                    const canReloadOpt =
+                      field.name === "team_id"
+                        ? () => fetchToolOptions("team_id", "tower_list_teams")
+                        : field.name === "todo_id" && String(formValues.todolist_id || "").trim()
+                          ? () =>
+                              fetchToolOptions("todo_id", "tower_list_todos", {
+                                todolist_id: String(formValues.todolist_id).trim(),
+                              })
+                          : field.name === "topic_id" && String(formValues.project_id || "").trim()
+                            ? () =>
+                                fetchToolOptions("topic_id", "tower_list_topics", {
+                                  project_id: String(formValues.project_id).trim(),
+                                })
+                            : field.name === "upload_id" && String(formValues.project_id || "").trim()
+                              ? () =>
+                                  fetchToolOptions("upload_id", "tower_list_uploads", {
+                                    project_id: String(formValues.project_id).trim(),
+                                  })
+                              : null;
+
+                    return (
+                      <div key={field.name} className={`space-y-1.5 ${isWide ? "sm:col-span-2" : ""}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-xs">
+                            <code className="font-mono">{field.name}</code>
+                            {field.required && <span className="text-destructive">*</span>}
+                            <span className="font-mono text-[11px] font-normal text-muted-foreground">
+                              ({field.type})
+                            </span>
+                          </Label>
+                          {canReloadOpt && (
+                            <Button
+                              type="button"
+                              variant="link"
+                              size="xs"
+                              disabled={fetchingOpt === field.name}
+                              onClick={canReloadOpt}
+                              className="h-auto p-0 text-[11px]"
+                            >
+                              {fetchingOpt === field.name ? "加载中..." : "拉取选项"}
+                            </Button>
+                          )}
+                        </div>
+                        {field.description && (
+                          <div className="text-[11px] text-muted-foreground">{field.description}</div>
+                        )}
+
+                        {opts.length > 0 && field.type === "string" && (
+                          <Select
+                            value={selectedOpt ? val : "__empty__"}
+                            onValueChange={(nextVal) =>
+                              setFormValues((prev) => ({
+                                ...prev,
+                                [field.name]: nextVal === "__empty__" ? "" : nextVal,
+                              }))
+                            }
+                          >
+                            <SelectTrigger aria-label={`选择 ${field.name}`} className="w-full text-xs">
+                              <SelectValue>
+                                {selectedOpt
+                                  ? `${selectedOpt.label} (${selectedOpt.id})`
+                                  : `下拉选择或下方手动输入（共 ${opts.length} 项）`}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__empty__">
+                                下拉选择或下方手动输入（共 {opts.length} 项）
+                              </SelectItem>
+                              {opts.map((o) => (
+                                <SelectItem key={o.id} value={o.id}>
+                                  {o.label} ({o.id})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+
+                        {field.type === "boolean" ? (
+                          <Select
+                            value={val === "true" || val === "false" ? val : "__empty__"}
+                            onValueChange={(nextVal) =>
+                              setFormValues((prev) => ({
+                                ...prev,
+                                [field.name]: nextVal === "__empty__" ? "" : nextVal,
+                              }))
+                            }
+                          >
+                            <SelectTrigger aria-label={field.name} className="w-full font-mono text-xs">
+                              <SelectValue>
+                                {val === "true" || val === "false" ? val : "默认（不传）"}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__empty__">默认（不传）</SelectItem>
+                              <SelectItem value="true">true</SelectItem>
+                              <SelectItem value="false">false</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : field.type === "object" || field.type === "array" ? (
+                          <Textarea
+                            rows={3}
+                            value={val}
+                            onChange={(e) =>
+                              setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
+                            }
+                            placeholder={field.type === "array" ? '["id1", "id2"]' : '{"key": "value"}'}
+                            className="font-mono text-xs"
+                          />
+                        ) : (
+                          <Input
+                            type={field.type === "integer" || field.type === "number" ? "number" : "text"}
+                            value={val}
+                            onChange={(e) =>
+                              setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))
+                            }
+                            placeholder={
+                              field.name === "page"
+                                ? "默认 1"
+                                : field.name === "page_size"
+                                  ? "默认 20，最大 50"
+                                  : `输入 ${field.name}`
+                            }
+                            className="font-mono text-xs"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  variant={isActiveToolDangerous ? "destructive" : "default"}
+                  disabled={calling || !effectiveKey}
+                  onClick={handleInvokeClick}
+                >
+                  {calling ? "调用中..." : "调用工具 (tools/call)"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => copyText("rpc", JSON.stringify(previewPayload, null, 2))}
+                >
+                  {copiedKey === "rpc" ? <CheckIcon /> : <CopyIcon />}
+                  {copiedKey === "rpc" ? "已复制 JSON-RPC" : "复制 JSON-RPC"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => copyText("curl", mcpCurlCommand)}
+                >
+                  {copiedKey === "curl" ? <CheckIcon /> : <CopyIcon />}
+                  {copiedKey === "curl" ? "已复制 curl" : "复制 /mcp curl"}
+                </Button>
+                {isActiveToolDangerous && (
+                  <span className="text-xs text-destructive">
+                    危险删除工具：调用前将弹出二次确认
+                  </span>
+                )}
+              </div>
+
+              {callError && <StatusBanner tone="error">{callError}</StatusBanner>}
+            </CardContent>
+          </Card>
         )}
 
         {callResult && (
-          <div className={`${UI.panel} p-4 sm:p-5 space-y-3`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <Card>
+            <CardHeader className="border-b">
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span
+                <Badge
+                  variant="outline"
                   className={`font-mono font-semibold ${
-                    callResult.isError ? UI.badgeDanger : UI.badgeSuccess
+                    callResult.isError ? TONE_BADGE.danger : TONE_BADGE.success
                   }`}
                 >
                   {callResult.isError ? "isError: true" : "isError: false"}
-                </span>
-                <span className="font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                </Badge>
+                <span className="font-mono tabular-nums text-muted-foreground">
                   {callResult.durationMs} ms
                 </span>
-                <SegmentedTabs
-                  size="xs"
-                  value={resultView}
-                  onChange={setResultView}
-                  options={[
-                    { id: "content", label: "工具返回内容" },
-                    { id: "rpc", label: "JSON-RPC 原始报文" },
-                  ]}
-                />
+                <Tabs value={resultView} onValueChange={setResultView}>
+                  <TabsList className="h-7">
+                    <TabsTrigger value="content" className="text-[11px]">工具返回内容</TabsTrigger>
+                    <TabsTrigger value="rpc" className="text-[11px]">JSON-RPC 原始报文</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
-              <button
-                type="button"
-                onClick={() => copyText("out", formattedOutput.text)}
-                className={UI.btnSecondary}
-              >
-                {copiedKey === "out" ? "已复制" : "复制结果"}
-              </button>
-            </div>
+              <CardAction>
+                <Button type="button" variant="outline" size="sm" onClick={() => copyText("out", formattedOutput.text)}>
+                  {copiedKey === "out" ? <CheckIcon /> : <CopyIcon />}
+                  {copiedKey === "out" ? "已复制" : "复制结果"}
+                </Button>
+              </CardAction>
+            </CardHeader>
 
-            <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50/80 p-3.5 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
-              {formattedOutput.isJSON ? (
-                <HighlightedJSON text={formattedOutput.text} />
-              ) : (
-                formattedOutput.text
-              )}
-            </pre>
-          </div>
+            <CardContent>
+              <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-lg border bg-muted/40 p-3.5 font-mono text-xs leading-relaxed text-foreground">
+                {formattedOutput.isJSON ? (
+                  <HighlightedJSON text={formattedOutput.text} />
+                ) : (
+                  formattedOutput.text
+                )}
+              </pre>
+            </CardContent>
+          </Card>
         )}
       </section>
 
-      <ModalDialog
+      <ConfirmDialog
         open={Boolean(confirmDanger && activeTool)}
-        onClose={() => setConfirmDanger(false)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDanger(false);
+        }}
         title="确认执行危险 MCP 工具调用"
+        confirmLabel="确认调用"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          const args = confirmDanger;
+          setConfirmDanger(false);
+          executeToolCall(args);
+        }}
       >
         {confirmDanger && activeTool && (
-          <>
-            <div className="space-y-2.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
-              <p>
-                即将以账号「{accountLabel}」执行{" "}
-                <code className="font-mono font-semibold text-red-600 dark:text-red-400">
-                  {activeTool.name}
-                </code>
-                （{activeTool.annotations?.title || "删除操作"}），调用参数：
-              </p>
-              <pre className="max-h-40 overflow-y-auto break-all whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
-                {JSON.stringify(confirmDanger, null, 2)}
-              </pre>
-              <p className="text-red-600 dark:text-red-400">
-                该工具会直接删除或变更真实 Tower 数据，请核对参数无误后再继续。
-              </p>
-            </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <button type="button" onClick={() => setConfirmDanger(false)} className={UI.btnSecondary}>
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const args = confirmDanger;
-                  setConfirmDanger(false);
-                  executeToolCall(args);
-                }}
-                className={UI.btnDanger}
-              >
-                确认调用
-              </button>
-            </div>
-          </>
+          <div className="space-y-2.5 text-xs leading-relaxed text-muted-foreground">
+            <p>
+              即将以账号「{accountLabel}」执行{" "}
+              <code className="font-mono font-semibold text-destructive">{activeTool.name}</code>
+              （{activeTool.annotations?.title || "删除操作"}），调用参数：
+            </p>
+            <pre className="max-h-40 overflow-y-auto break-all whitespace-pre-wrap rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs text-foreground">
+              {JSON.stringify(confirmDanger, null, 2)}
+            </pre>
+            <p className="text-destructive">
+              该工具会直接删除或变更真实 Tower 数据，请核对参数无误后再继续。
+            </p>
+          </div>
         )}
-      </ModalDialog>
+      </ConfirmDialog>
     </div>
   );
 }

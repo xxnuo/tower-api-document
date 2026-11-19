@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -31,6 +32,11 @@ function siteIndexes() {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), siteIndexes()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   server: {
     host: "::",
     port: 5173,

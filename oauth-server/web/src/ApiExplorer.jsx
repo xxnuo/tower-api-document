@@ -1,13 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { TOWER_API_CATALOG } from "./towerApiCatalog.js";
-import { ModalDialog, StatusBanner, UI } from "./ui.jsx";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDialog, StatusBanner, TONE_BADGE } from "@/components/shared";
 
 const METHOD_BADGE = {
-  GET: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  POST: "border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-  PATCH: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  PUT: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-  DELETE: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
+  GET: TONE_BADGE.success,
+  POST: TONE_BADGE.info,
+  PATCH: TONE_BADGE.warning,
+  PUT: TONE_BADGE.warning,
+  DELETE: TONE_BADGE.danger,
 };
 
 function extractPathParams(path) {
@@ -97,9 +111,9 @@ export function HighlightedJSON({ text }) {
         ? "text-sky-800 dark:text-sky-300"
         : "text-emerald-800 dark:text-emerald-300";
     } else if (token === "true" || token === "false") {
-      cls = "font-semibold text-zinc-900 dark:text-zinc-100";
+      cls = "font-semibold text-foreground";
     } else if (token === "null") {
-      cls = "text-zinc-500 dark:text-zinc-400";
+      cls = "text-muted-foreground";
     }
     tokens.push(
       <span key={key++} className={cls}>
@@ -365,29 +379,29 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-12">
-      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-[#111113]">
-        <div className="shrink-0 p-3.5 border-b border-zinc-200 dark:border-zinc-800 space-y-2.5">
+      <aside className="lg:col-span-4 xl:col-span-3 flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r bg-card">
+        <div className="shrink-0 p-3.5 border-b space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Tower API 目录
             </h2>
-            <span className={`${UI.badgeNeutral} font-mono tabular-nums`}>
+            <Badge variant="secondary" className="font-mono tabular-nums">
               {TOWER_API_CATALOG.length}
-            </span>
+            </Badge>
           </div>
-          <input
+          <Input
             type="text"
             aria-label="搜索 Tower API 接口"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="搜索接口名称、路径或分组..."
-            className={UI.inputSm}
+            className="text-xs"
           />
         </div>
         <div className="max-h-64 lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto p-2.5 space-y-3">
           {groupedCatalog.map((group) => (
             <div key={group.name} className="space-y-1">
-              <div className="sticky top-0 z-10 bg-white/95 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:bg-[#111113]/95 dark:text-zinc-500">
+              <div className="sticky top-0 z-10 bg-card/95 px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 {group.name}
               </div>
               {group.items.map((item) => {
@@ -398,30 +412,33 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                     key={item.id}
                     type="button"
                     onClick={() => selectEndpoint(item)}
-                    className={`w-full text-left rounded-md border px-2.5 py-2 transition-colors cursor-pointer ${
+                    className={`w-full text-left rounded-lg border px-2.5 py-2 transition-colors cursor-pointer ${
                       active
-                        ? "border-zinc-900 bg-zinc-100/80 dark:border-zinc-200 dark:bg-zinc-800/70"
-                        : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
+                        ? "border-foreground bg-muted/70"
+                        : "border-transparent hover:bg-muted/40"
                     } ${unavail ? "opacity-65" : ""}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold shrink-0 ${
-                            METHOD_BADGE[item.method] || UI.badgeNeutral
+                        <Badge
+                          variant="outline"
+                          className={`rounded px-1.5 py-0 font-mono text-[10px] font-semibold shrink-0 ${
+                            METHOD_BADGE[item.method] || ""
                           }`}
                         >
                           {item.method}
-                        </span>
-                        <span className="truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                        </Badge>
+                        <span className="truncate text-xs font-medium text-foreground">
                           {item.name}
                         </span>
                       </div>
                       {unavail && (
-                        <span className={UI.badgeDanger}>不可用</span>
+                        <Badge variant="outline" className={`shrink-0 ${TONE_BADGE.danger}`}>
+                          不可用
+                        </Badge>
                       )}
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
+                    <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
                       {item.path}
                     </div>
                   </button>
@@ -430,122 +447,154 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
             </div>
           ))}
           {groupedCatalog.length === 0 && (
-            <p className="py-6 text-center text-xs text-zinc-400">没有匹配的接口</p>
+            <p className="py-6 text-center text-xs text-muted-foreground">没有匹配的接口</p>
           )}
         </div>
       </aside>
 
-      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto bg-[#FAFAFB] p-4 sm:p-6 space-y-4 dark:bg-[#09090B]">
-        <div className={`${UI.panel} p-4 sm:p-5 space-y-4`}>
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 pb-3.5 dark:border-zinc-800/80">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded border px-2 py-0.5 font-mono text-[11px] font-semibold ${
-                    METHOD_BADGE[endpoint.method] || UI.badgeNeutral
-                  }`}
-                >
-                  {endpoint.method}
-                </span>
-                <h2 className="text-sm font-semibold text-zinc-950 dark:text-zinc-100">{endpoint.name}</h2>
-                {currentUnavailable && (
-                  <span className={UI.badgeDanger}>
-                    当前账号不可用 · {currentUnavailable}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1.5 break-all font-mono text-xs text-zinc-500 dark:text-zinc-400">
-                https://tower.im{readOnly ? endpoint.path : resolvedPath}
-                {!readOnly && query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
-              </div>
-            </div>
-            {!readOnly && (
-              <div className="text-xs">
-                {accessToken ? (
-                  <span className={UI.badgeSuccess}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    使用账号：{accountLabel}
-                  </span>
-                ) : (
-                  <span className={UI.badgeWarning}>
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                    未登录，可下方填入 Token
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {readOnly ? (
-            <StatusBanner tone="warning">
-              此删除接口仅供查看，调试工具已禁用请求发送。
-            </StatusBanner>
-          ) : (
-            <>
+      <section className="lg:col-span-8 xl:col-span-9 min-w-0 min-h-0 overflow-y-auto bg-background p-4 sm:p-6 space-y-4">
+        <Card>
+          <CardHeader className="border-b">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className={`rounded px-2 font-mono text-[11px] font-semibold ${
+                  METHOD_BADGE[endpoint.method] || ""
+                }`}
+              >
+                {endpoint.method}
+              </Badge>
+              <CardTitle className="text-sm">{endpoint.name}</CardTitle>
               {currentUnavailable && (
-                <StatusBanner tone="error">
-                  当前账号对该接口 {currentUnavailable}，已标记为不可用；可切换其他有权限的账号或重新授权后再试。
-                </StatusBanner>
+                <Badge variant="outline" className={TONE_BADGE.danger}>
+                  当前账号不可用 · {currentUnavailable}
+                </Badge>
               )}
+            </div>
+            <CardDescription className="break-all font-mono text-xs">
+              https://tower.im{readOnly ? endpoint.path : resolvedPath}
+              {!readOnly && query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
+            </CardDescription>
+            {!readOnly && (
+              <CardAction>
+                {accessToken ? (
+                  <Badge variant="outline" className={TONE_BADGE.success}>
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    使用账号：{accountLabel}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className={TONE_BADGE.warning}>
+                    <span className="size-1.5 rounded-full bg-amber-500" />
+                    未登录，可下方填入 Token
+                  </Badge>
+                )}
+              </CardAction>
+            )}
+          </CardHeader>
 
-              {!accessToken && (
-                <div className="space-y-1.5">
-                  <label htmlFor="api-manual-token" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    临时 Access Token
-                  </label>
-                  <input
-                    id="api-manual-token"
-                    type="password"
-                    value={manualToken}
-                    onChange={(event) => setManualToken(event.target.value)}
-                    placeholder="输入 Bearer Access Token"
-                    className={`${UI.inputSm} font-mono`}
-                  />
-                </div>
-              )}
+          <CardContent className="space-y-4">
+            {readOnly ? (
+              <StatusBanner tone="warning">
+                此删除接口仅供查看，调试工具已禁用请求发送。
+              </StatusBanner>
+            ) : (
+              <>
+                {currentUnavailable && (
+                  <StatusBanner tone="error">
+                    当前账号对该接口 {currentUnavailable}，已标记为不可用；可切换其他有权限的账号或重新授权后再试。
+                  </StatusBanner>
+                )}
 
-              {paramNames.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {paramNames.map((name) => {
-                    const optionKey = resolveOptionKey(endpoint.path, name);
-                    const options = paramOptions[optionKey] || [];
-                    const currentVal = getParamValue(name);
-                    const canLoadTodo = optionKey === "todo_id" && (pathParams.todolist_id || "").trim();
-                    const canLoadTopics = optionKey === "topic_id" && (pathParams.project_id || "").trim();
-                    const canLoadUploads = optionKey === "upload_id" && (pathParams.project_id || "").trim();
-                    const manualLoadPath =
-                      optionKey === "team_id"
-                        ? "/api/v1/teams"
-                        : canLoadTodo
-                          ? `/api/v1/todolists/${encodeURIComponent(pathParams.todolist_id.trim())}/todos`
-                          : canLoadTopics
-                            ? `/api/v1/projects/${encodeURIComponent(pathParams.project_id.trim())}/topics`
-                            : canLoadUploads
-                              ? `/api/v1/projects/${encodeURIComponent(pathParams.project_id.trim())}/uploads`
-                              : "";
+                {!accessToken && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="api-manual-token" className="text-xs">
+                      临时 Access Token
+                    </Label>
+                    <Input
+                      id="api-manual-token"
+                      type="password"
+                      value={manualToken}
+                      onChange={(event) => setManualToken(event.target.value)}
+                      placeholder="输入 Bearer Access Token"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                )}
 
-                    return (
-                      <div key={name} className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                            路径参数{" "}
-                            <code className="font-mono text-zinc-950 dark:text-zinc-100">{`{${name}}`}</code>
-                          </label>
-                          {manualLoadPath && (
-                            <button
-                              type="button"
-                              disabled={fetchingKey === optionKey || !effectiveToken}
-                              onClick={() => fetchOptionList(optionKey, manualLoadPath)}
-                              className="text-[11px] font-medium text-zinc-600 underline-offset-2 hover:text-zinc-950 hover:underline disabled:opacity-50 cursor-pointer dark:text-zinc-400 dark:hover:text-zinc-100"
+                {paramNames.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {paramNames.map((name) => {
+                      const optionKey = resolveOptionKey(endpoint.path, name);
+                      const options = paramOptions[optionKey] || [];
+                      const currentVal = getParamValue(name);
+                      const selectedOption = options.find((opt) => opt.id === currentVal);
+                      const canLoadTodo = optionKey === "todo_id" && (pathParams.todolist_id || "").trim();
+                      const canLoadTopics = optionKey === "topic_id" && (pathParams.project_id || "").trim();
+                      const canLoadUploads = optionKey === "upload_id" && (pathParams.project_id || "").trim();
+                      const manualLoadPath =
+                        optionKey === "team_id"
+                          ? "/api/v1/teams"
+                          : canLoadTodo
+                            ? `/api/v1/todolists/${encodeURIComponent(pathParams.todolist_id.trim())}/todos`
+                            : canLoadTopics
+                              ? `/api/v1/projects/${encodeURIComponent(pathParams.project_id.trim())}/topics`
+                              : canLoadUploads
+                                ? `/api/v1/projects/${encodeURIComponent(pathParams.project_id.trim())}/uploads`
+                                : "";
+
+                      return (
+                        <div key={name} className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label className="text-xs">
+                              路径参数 <code className="font-mono">{`{${name}}`}</code>
+                            </Label>
+                            {manualLoadPath && (
+                              <Button
+                                type="button"
+                                variant="link"
+                                size="xs"
+                                disabled={fetchingKey === optionKey || !effectiveToken}
+                                onClick={() => fetchOptionList(optionKey, manualLoadPath)}
+                                className="h-auto p-0 text-[11px]"
+                              >
+                                {fetchingKey === optionKey ? "加载中..." : "刷新列表"}
+                              </Button>
+                            )}
+                          </div>
+                          {options.length > 0 && (
+                            <Select
+                              value={selectedOption ? currentVal : "__empty__"}
+                              onValueChange={(val) => {
+                                const next = val === "__empty__" ? "" : val;
+                                setPathParams((prev) => ({
+                                  ...prev,
+                                  [name]: next,
+                                  ...(name === "id" ? { [optionKey]: next } : {}),
+                                }));
+                              }}
                             >
-                              {fetchingKey === optionKey ? "加载中..." : "刷新列表"}
-                            </button>
+                              <SelectTrigger aria-label={`选择 ${name}`} className="w-full text-xs">
+                                <SelectValue>
+                                  {selectedOption
+                                    ? `${selectedOption.label} (${selectedOption.id})`
+                                    : `选择或下方手动输入（共 ${options.length} 项）`}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__empty__">
+                                  选择或下方手动输入（共 {options.length} 项）
+                                </SelectItem>
+                                {options.map((opt) => (
+                                  <SelectItem key={opt.id} value={opt.id}>
+                                    {opt.label} ({opt.id})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
-                        </div>
-                        {options.length > 0 && (
-                          <select
-                            aria-label={`选择 ${name}`}
-                            value={options.some((opt) => opt.id === currentVal) ? currentVal : ""}
+                          <Input
+                            type="text"
+                            value={currentVal}
                             onChange={(event) => {
                               const val = event.target.value;
                               setPathParams((prev) => ({
@@ -554,165 +603,133 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                                 ...(name === "id" ? { [optionKey]: val } : {}),
                               }));
                             }}
-                            className={UI.inputSm}
-                          >
-                            <option value="">选择或下方手动输入（共 {options.length} 项）</option>
-                            {options.map((opt) => (
-                              <option key={opt.id} value={opt.id}>
-                                {opt.label} ({opt.id})
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        <input
-                          type="text"
-                          value={currentVal}
-                          onChange={(event) => {
-                            const val = event.target.value;
-                            setPathParams((prev) => ({
-                              ...prev,
-                              [name]: val,
-                              ...(name === "id" ? { [optionKey]: val } : {}),
-                            }));
-                          }}
-                          placeholder={`输入 ${name}`}
-                          className={`${UI.inputSm} font-mono`}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                            placeholder={`输入 ${name}`}
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
-              <div className="space-y-1.5">
-                <label htmlFor="api-query" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                  Query 参数（可选，列表接口默认限制每页 20 条、最大 50 条）
-                </label>
-                <input
-                  id="api-query"
-                  type="text"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="例如: page[number]=1&page[size]=20"
-                  className={`${UI.inputSm} font-mono`}
-                />
-              </div>
-
-              {endpoint.method !== "GET" && endpoint.method !== "DELETE" && (
                 <div className="space-y-1.5">
-                  <label htmlFor="api-body" className="block text-xs font-medium text-zinc-700 dark:text-zinc-300">
-                    请求体 JSON
-                  </label>
-                  <textarea
-                    id="api-body"
-                    rows={5}
-                    value={body}
-                    onChange={(event) => setBody(event.target.value)}
-                    placeholder="{}"
-                    className={`${UI.inputSm} font-mono p-2.5`}
+                  <Label htmlFor="api-query" className="text-xs">
+                    Query 参数（可选，列表接口默认限制每页 20 条、最大 50 条）
+                  </Label>
+                  <Input
+                    id="api-query"
+                    type="text"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="例如: page[number]=1&page[size]=20"
+                    className="font-mono text-xs"
                   />
                 </div>
-              )}
 
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={handleSend}
-                  className={endpoint.method === "DELETE" ? UI.btnDanger : UI.btnPrimary}
-                >
-                  {loading ? "请求中..." : "发送请求"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => copyText("curl", curlCommand)}
-                  className={UI.btnSecondary}
-                >
-                  {copiedKey === "curl" ? "已复制 curl" : "复制 curl"}
-                </button>
-                {endpoint.method === "DELETE" && (
-                  <span className="text-xs text-red-600 dark:text-red-400">
-                    注意：DELETE 请求会操作真实 Tower 数据
-                  </span>
+                {endpoint.method !== "GET" && endpoint.method !== "DELETE" && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="api-body" className="text-xs">
+                      请求体 JSON
+                    </Label>
+                    <Textarea
+                      id="api-body"
+                      rows={5}
+                      value={body}
+                      onChange={(event) => setBody(event.target.value)}
+                      placeholder="{}"
+                      className="font-mono text-xs"
+                    />
+                  </div>
                 )}
-              </div>
 
-              {error && <StatusBanner tone="error">{error}</StatusBanner>}
-            </>
-          )}
-        </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant={endpoint.method === "DELETE" ? "destructive" : "default"}
+                    disabled={loading}
+                    onClick={handleSend}
+                  >
+                    {loading ? "请求中..." : "发送请求"}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
+                    {copiedKey === "curl" ? <CheckIcon /> : <CopyIcon />}
+                    {copiedKey === "curl" ? "已复制 curl" : "复制 curl"}
+                  </Button>
+                  {endpoint.method === "DELETE" && (
+                    <span className="text-xs text-destructive">
+                      注意：DELETE 请求会操作真实 Tower 数据
+                    </span>
+                  )}
+                </div>
+
+                {error && <StatusBanner tone="error">{error}</StatusBanner>}
+              </>
+            )}
+          </CardContent>
+        </Card>
 
         {!readOnly && response && (
-          <div className={`${UI.panel} p-4 sm:p-5 space-y-3`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <Card>
+            <CardHeader className="border-b">
               <div className="flex items-center gap-2 text-xs">
-                <span
+                <Badge
+                  variant="outline"
                   className={`font-mono font-semibold tabular-nums ${
-                    response.status >= 200 && response.status < 300 ? UI.badgeSuccess : UI.badgeDanger
+                    response.status >= 200 && response.status < 300 ? TONE_BADGE.success : TONE_BADGE.danger
                   }`}
                 >
                   {response.status_text || response.status}
-                </span>
-                <span className="font-mono tabular-nums text-zinc-500 dark:text-zinc-400">
+                </Badge>
+                <span className="font-mono tabular-nums text-muted-foreground">
                   {response.duration_ms} ms
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => copyText("resp", formattedResponse)}
-                className={UI.btnSecondary}
-              >
-                {copiedKey === "resp" ? "已复制" : "复制响应"}
-              </button>
-            </div>
-            <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50/80 p-3.5 font-mono text-xs leading-relaxed text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
-              {typeof response.body === "string" ? (
-                formattedResponse
-              ) : (
-                <HighlightedJSON text={formattedResponse} />
-              )}
-            </pre>
-          </div>
+              <CardAction>
+                <Button type="button" variant="outline" size="sm" onClick={() => copyText("resp", formattedResponse)}>
+                  {copiedKey === "resp" ? <CheckIcon /> : <CopyIcon />}
+                  {copiedKey === "resp" ? "已复制" : "复制响应"}
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              <pre className="min-h-[200px] max-h-[55vh] overflow-y-auto break-all whitespace-pre-wrap rounded-lg border bg-muted/40 p-3.5 font-mono text-xs leading-relaxed text-foreground">
+                {typeof response.body === "string" ? (
+                  formattedResponse
+                ) : (
+                  <HighlightedJSON text={formattedResponse} />
+                )}
+              </pre>
+            </CardContent>
+          </Card>
         )}
       </section>
 
-      <ModalDialog
+      <ConfirmDialog
         open={!readOnly && confirmDanger}
-        onClose={() => setConfirmDanger(false)}
+        onOpenChange={setConfirmDanger}
         title="确认执行危险操作"
+        confirmLabel="确认发送"
+        confirmVariant="destructive"
+        onConfirm={() => {
+          setConfirmDanger(false);
+          executeSend();
+        }}
       >
-        <div className="space-y-2.5 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+        <div className="space-y-2.5 text-xs leading-relaxed text-muted-foreground">
           <p>
             即将使用账号「{accountLabel}」向 Tower 发送{" "}
-            <span className="font-mono font-semibold text-red-600 dark:text-red-400">
-              {endpoint.method}
-            </span>{" "}
+            <span className="font-mono font-semibold text-destructive">{endpoint.method}</span>{" "}
             请求（{endpoint.name}）：
           </p>
-          <div className="break-all rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-800 dark:border-zinc-800 dark:bg-[#09090B] dark:text-zinc-200">
+          <div className="break-all rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs text-foreground">
             https://tower.im{resolvedPath}
             {query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
           </div>
-          <p className="text-red-600 dark:text-red-400">
+          <p className="text-destructive">
             该操作会直接删除或修改真实 Tower 数据，请确认目标 ID 无误后再继续。
           </p>
         </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={() => setConfirmDanger(false)} className={UI.btnSecondary}>
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setConfirmDanger(false);
-              executeSend();
-            }}
-            className={UI.btnDanger}
-          >
-            确认发送
-          </button>
-        </div>
-      </ModalDialog>
+      </ConfirmDialog>
     </div>
   );
 }
