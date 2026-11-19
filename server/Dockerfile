@@ -24,7 +24,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=go-builder /agents-tower /app/agents-tower
 ENV LISTEN_ADDR=[::]:8888
-ENV DB_PATH=/app/data/agents-tower.db
+ENV DB_PATH=/app/data/data.db
 VOLUME ["/app/data"]
 EXPOSE 8888
 ENTRYPOINT ["/app/agents-tower"]

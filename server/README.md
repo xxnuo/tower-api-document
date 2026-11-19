@@ -10,7 +10,8 @@
 - `TOWER_CLIENT_SECRET`: Tower 应用密钥
 - `TOWER_REDIRECT_URI`: 回调地址（调试可用 `urn:ietf:wg:oauth:2.0:oob`，正式回调如 `http://localhost:8888/oauth2/callback`）
 - `LISTEN_ADDR`: 监听地址，默认 `[::]:8888`
-- `DB_PATH`: SQLite 数据库路径，默认 `data/agents-tower.db`
+- `DB_PATH`: SQLite 数据库路径，默认 `data/data.db`
+  同目录已有 `agents-tower.db` 且尚无 `data.db` 时，服务继续使用原数据库。
 - `REGISTRATION_MODE`: 注册准入模式，支持 `open`（默认开放）、`invite`（仅凭邀请码）或 `closed`（关闭公开注册；也可在管理员后台动态调整）
 - `INVITE_CODE`: 当 `REGISTRATION_MODE=invite` 时所需的团队邀请码
 - `ALLOW_MCP_DELETE`: 是否允许 MCP 执行硬删除操作，默认 `false`（仅放行取消任务完成状态与移除负责人）
@@ -45,7 +46,7 @@ go run . user reset-password <username> <new-password>
 - 部署主机为 `xxnuo@kompiler.lan`，由当前用户通过 Podman Compose 管理。
 - 服务入口为 [http://kompiler.lan:18888](http://kompiler.lan:18888)，MCP 路径为 `/mcp`。宿主机端口 `18888` 映射到容器端口 `8888`。
 - 工作目录为 `/home/xxnuo/services/agentstower`。部署使用目录内的 `compose.yml`，镜像为 `registry.lazycat.cloud/x/agentstower`，默认标签为 `1.0.0`。
-- 远端 `.env` 从本机 `server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/agents-tower.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
+- 远端 `.env` 从本机 `server/.env` 原样复制，权限为 `0600`。SQLite 数据库为 `data/data.db`，宿主机的 `./data` 挂载到容器的 `/app/data`。
 
 ```bash
 ssh xxnuo@kompiler.lan

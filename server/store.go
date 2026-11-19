@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,11 +112,27 @@ type Store struct {
 	refreshMu sync.Mutex
 }
 
+const defaultDBPath = "data/data.db"
+
 func OpenStore(dbPath string) (*Store, error) {
 	if dbPath == "" {
-		dbPath = "data/agents-tower.db"
+		dbPath = defaultDBPath
 	}
 	if dbPath != ":memory:" && !strings.HasPrefix(dbPath, "file:") {
+		if filepath.Base(dbPath) == "data.db" {
+			// Keep opening the legacy SQLite database in place, including its WAL.
+			if _, err := os.Lstat(dbPath); errors.Is(err, os.ErrNotExist) {
+				legacyPath := filepath.Join(filepath.Dir(dbPath), "agents-tower.db")
+				if _, err := os.Lstat(legacyPath); err == nil {
+					log.Printf("using existing SQLite database %s", legacyPath)
+					dbPath = legacyPath
+				} else if !errors.Is(err, os.ErrNotExist) {
+					return nil, err
+				}
+			} else if err != nil {
+				return nil, err
+			}
+		}
 		if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return nil, err

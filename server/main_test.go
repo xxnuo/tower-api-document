@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +18,43 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestDefaultDatabasePathKeepsLegacyData(t *testing.T) {
+	t.Chdir(t.TempDir())
+	legacy, err := OpenStore("data/agents-tower.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.db.Exec("PRAGMA user_version = 42"); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := OpenStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var version int
+	if err := store.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != 42 {
+		t.Fatalf("legacy database user_version = %d, error = %v", version, err)
+	}
+	if _, err := os.Stat("data/data.db"); !os.IsNotExist(err) {
+		t.Fatalf("expected no new database, stat error = %v", err)
+	}
+}
+
+func TestDefaultDatabasePathCreatesDataDB(t *testing.T) {
+	t.Chdir(t.TempDir())
+	store, err := OpenStore("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := os.Stat("data/data.db"); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func testConfig(towerURL string) Config {
 	return Config{
@@ -575,7 +613,7 @@ func TestAPIProxy(t *testing.T) {
 }
 
 func TestSQLiteStorePersistenceAndAccountManagement(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "agents-tower.db")
+	dbPath := filepath.Join(t.TempDir(), "data.db")
 	store, err := OpenStore(dbPath)
 	if err != nil {
 		t.Fatalf("OpenStore: %v", err)

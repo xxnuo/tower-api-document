@@ -172,7 +172,7 @@ func loadConfigFromEnv() (Config, error) {
 		cfg.ListenAddr = "[::]:8888"
 	}
 	if cfg.DBPath == "" {
-		cfg.DBPath = "data/agents-tower.db"
+		cfg.DBPath = defaultDBPath
 	}
 	if cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return cfg, errors.New("TOWER_CLIENT_ID and TOWER_CLIENT_SECRET are required")
@@ -1029,7 +1029,7 @@ func main() {
 		loadDotEnv(".env")
 		dbPath := strings.TrimSpace(os.Getenv("DB_PATH"))
 		if dbPath == "" {
-			dbPath = "data/agents-tower.db"
+			dbPath = defaultDBPath
 		}
 		if err := runCLI(os.Args[1:], dbPath, os.Stdout); err != nil {
 			log.Fatal(err)
@@ -1056,7 +1056,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, db=%s)", cfg.ListenAddr, cfg.RedirectURI, cfg.DBPath)
+	log.Printf("AgentsTower server listening on %s (redirect_uri=%s, configured_db=%s)", cfg.ListenAddr, cfg.RedirectURI, cfg.DBPath)
 	server := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           newMux(cfg),

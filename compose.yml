@@ -9,7 +9,7 @@ services:
       - ./server/.env
     environment:
       LISTEN_ADDR: "[::]:8888"
-      DB_PATH: "/app/data/agents-tower.db"
+      DB_PATH: "/app/data/data.db"
     volumes:
       - ./server/data:/app/data
     healthcheck:
