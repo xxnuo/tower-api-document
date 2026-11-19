@@ -783,6 +783,10 @@ export default function App() {
           </nav>
         </div>
 
+        <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          部分 API 由本服务自行实现和补全。
+        </p>
+
         {/* 底部用户信息与快捷操作 */}
         <div className="p-3 border-t border-sidebar-border bg-sidebar/50 space-y-2">
           <div className="flex items-center gap-1.5">
