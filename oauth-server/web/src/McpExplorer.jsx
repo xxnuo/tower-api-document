@@ -16,6 +16,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog, SourceBadge, StatusBanner, TONE_BADGE } from "@/components/shared";
+import { useClipboard } from "@/components/clipboard";
 
 const STATELESS_PROTOCOL = "2026-07-28";
 const LEGACY_PROTOCOL = "2025-11-25";
@@ -85,6 +86,7 @@ function parseToolOptions(text) {
 }
 
 export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCreds }) {
+  const copy = useClipboard();
   const [manualKey, setManualKey] = useState("");
   const [tools, setTools] = useState([]);
   const [serverMeta, setServerMeta] = useState(null);
@@ -510,7 +512,7 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
   }, [previewRequest, effectiveKey, mcpServerURL]);
 
   async function copyText(key, text) {
-    await navigator.clipboard.writeText(text);
+    if (!(await copy(text))) return;
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(""), 1200);
   }
@@ -548,6 +550,9 @@ export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCr
               {tools.length}
             </Badge>
           </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            试用 AI 助手可调用的 Tower 工具。绑定 Tower 账号后，可从「只读」筛选开始，选一个工具、填好参数并调用，在右侧查看返回结果。
+          </p>
           <Input
             type="text"
             aria-label="搜索 MCP 工具"

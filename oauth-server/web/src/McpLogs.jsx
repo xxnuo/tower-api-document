@@ -59,7 +59,12 @@ export default function McpLogs({ admin }) {
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1360px] space-y-5 px-4 py-5 sm:px-6 sm:py-6">
         <header className="flex items-center justify-between gap-4 border-b pb-4">
-          <h1 className="font-heading text-lg font-semibold tracking-tight">MCP 操作日志</h1>
+          <div className="space-y-1">
+            <h1 className="font-heading text-lg font-semibold tracking-tight">MCP 操作日志</h1>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              回查 AI 助手何时调用了哪个 Tower 工具，以及调用结果和耗时。要记录后续调用，请开启下方开关。
+            </p>
+          </div>
           <Button size="sm" variant="outline" disabled={loading || saving} onClick={() => setCursors([])}>刷新</Button>
         </header>
         <div className="flex items-center justify-between gap-4 rounded-lg border bg-card p-4">

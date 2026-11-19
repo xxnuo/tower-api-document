@@ -180,6 +180,9 @@ export default function AdminPanel({ currentUser }) {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
           <div>
             <h1 className="font-heading text-lg font-semibold tracking-tight">成员与权限管理</h1>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              设置同事如何注册及是否允许 MCP 硬删除资源。修改后保存策略，或在成员列表中调整角色、重置密码。
+            </p>
             <p className="mt-1 text-xs text-muted-foreground">
               首个注册账号默认为管理员；也可通过命令行{" "}
               <code className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground">

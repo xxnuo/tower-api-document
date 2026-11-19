@@ -10,6 +10,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useClipboard } from "@/components/clipboard";
 import {
   Dialog,
   DialogContent,
@@ -82,10 +83,11 @@ export function StatusBanner({ tone = "info", children, className = "" }) {
 }
 
 export function CopyField({ label, value, displayValue, heightClass = "h-16" }) {
+  const copy = useClipboard();
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(value);
+    if (!(await copy(value))) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog, SourceBadge, StatusBanner, TONE_BADGE } from "@/components/shared";
+import { useClipboard } from "@/components/clipboard";
 
 const METHOD_BADGE = {
   GET: TONE_BADGE.success,
@@ -129,6 +130,7 @@ export function HighlightedJSON({ text }) {
 }
 
 export default function ApiExplorer({ accountKey, accountLabel }) {
+  const copy = useClipboard();
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState(TOWER_API_CATALOG[0].id);
   const [pathParams, setPathParams] = useState({});
@@ -373,7 +375,7 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
   }
 
   async function copyText(key, text) {
-    await navigator.clipboard.writeText(text);
+    if (!(await copy(text))) return;
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(""), 1200);
   }
@@ -408,6 +410,9 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
               {TOWER_API_CATALOG.length}
             </Badge>
           </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            调试 Tower 接口。先在「账号与接入」绑定并选择 Tower 账号，再选接口、填写参数并发送请求。可以从 GET 接口开始，在右侧查看响应状态和内容。
+          </p>
           <Input
             type="text"
             aria-label="搜索 Tower API 接口"

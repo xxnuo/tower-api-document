@@ -5,6 +5,7 @@ import { cva } from "class-variance-authority";
 import { cn } from "cn"
 
 import { Button } from "@/components/ui/button"
+import { useClipboard } from "@/components/clipboard"
 import { CheckIcon, CopyIcon } from "@phosphor-icons/react"
 
 const codeBlockVariants = cva(
@@ -97,6 +98,7 @@ function CodeBlockCopyButton({
   onClick,
   ...props
 }) {
+  const copy = useClipboard()
   const [copied, setCopied] = React.useState(false)
 
   React.useEffect(() => {
@@ -119,10 +121,7 @@ function CodeBlockCopyButton({
         className={cn(className)}
         onClick={(event) => {
           onClick?.(event)
-          navigator.clipboard
-            .writeText(value)
-            .then(() => setCopied(true))
-            .catch(() => {})
+          if (!event.defaultPrevented) copy(value).then((ok) => setCopied(ok))
         }}
         {...props}
       >

@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { BrandMark, ConfirmDialog, CopyField, StatusBanner } from "@/components/shared";
+import { useClipboard } from "@/components/clipboard";
 
 const LEGACY_STORAGE_KEY = "tower_oauth_result_v1";
 const ACCOUNTS_STORAGE_KEY = "tower_oauth_accounts_v1";
@@ -135,6 +136,7 @@ function maskSecretsInText(text, secrets) {
 }
 
 export default function App() {
+  const copy = useClipboard();
   const [config, setConfig] = useState({ is_oob: false });
   const [authChecking, setAuthChecking] = useState(true);
   const [hasUsers, setHasUsers] = useState(true);
@@ -361,11 +363,12 @@ export default function App() {
   async function handleCopySkillMD() {
     try {
       const res = await fetch("/api/skill.md");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       let text = await res.text();
       if (mcpKey) {
         text = text.replace("<在 AgentsTower 账号与接入获取的 at_sk-... 密钥>", mcpKey);
       }
-      await navigator.clipboard.writeText(text);
+      if (!(await copy(text))) return;
       setSkillCopied(true);
       setTimeout(() => setSkillCopied(false), 1800);
     } catch (err) {
@@ -978,7 +981,12 @@ export default function App() {
           <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1360px] px-4 py-5 sm:px-6 sm:py-6 space-y-5">
               <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
-                <h1 className="font-heading text-lg font-semibold tracking-tight">账号与接入</h1>
+                <div className="space-y-1">
+                  <h1 className="font-heading text-lg font-semibold tracking-tight">账号与接入</h1>
+                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    将你的 Tower 账号接入 AI 助手。先添加 Tower 账号并完成授权，再复制「客户端配置」到支持 MCP 的 AI 客户端。也可以先到「MCP 调试」试用只读工具。
+                  </p>
+                </div>
                 {creds && <Button type="button" size="sm" onClick={handleStartLogin}><PlusIcon />添加 Tower 账号</Button>}
               </header>
                     {error && <StatusBanner tone="error">{error}</StatusBanner>}

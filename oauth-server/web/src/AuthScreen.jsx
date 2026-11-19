@@ -154,12 +154,17 @@ export default function AuthScreen({
             </div>
             <div>
               <CardTitle className="text-base font-semibold tracking-tight">AgentsTower</CardTitle>
-              <CardDescription className="text-xs">登录后绑定 Tower 账号，获取 MCP 接入配置。</CardDescription>
+              <CardDescription className="text-xs leading-relaxed">
+                把 Tower 接入 AI 助手，用自然语言查询项目和任务、创建任务或更新进度。
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
 
         <CardContent className="px-6 space-y-5">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            先登录或注册 AgentsTower，再绑定你的 Tower 账号，复制配置到支持 MCP 的 AI 客户端。
+          </p>
           {Number.isInteger(towerConnectedColleagues) && towerConnectedColleagues > 0 && (
             <p className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm leading-relaxed text-muted-foreground">
               已有 <strong className="font-semibold text-foreground">{towerConnectedColleagues}</strong> 位同事将自己的 Tower 接入了 AI 功能，你也快试试吧！
