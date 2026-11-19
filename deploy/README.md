@@ -19,6 +19,14 @@ test -f data/data.db && sqlite3 data/data.db ".backup 'backups/pre-blue-green-$(
 
 镜像请使用版本标签。默认入口为宿主机端口 `18888`。首次迁移会在验证新版及旧版副本后停止原 `agentstower` 容器，再启动 Caddy 接管端口。首次接管有一次短暂入口中断。此时若有尚未完成且保存在旧进程内存中的 OAuth 授权，需重新发起。之后的发布通过 Caddy 平滑重载切流。
 
+在生产目录执行以下命令，先将 `VERSION` 的值改为实际要发布的版本。
+
+```bash
+VERSION=2.0.0
+./deploy/deploy.sh deploy "registry.lazycat.cloud/x/agentstower:$VERSION"
+./deploy/deploy.sh status
+```
+
 ## 日常升级示例：从 1.x 升到 2.0.0
 
 Caddy 接管入口后，在本地仓库根目录将 `server/web/package.json` 的 `version` 更新为 `2.0.0`，构建并推送镜像。
