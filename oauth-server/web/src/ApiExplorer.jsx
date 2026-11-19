@@ -174,7 +174,7 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
   }, [search]);
 
   const paramNames = useMemo(() => extractPathParams(endpoint.path), [endpoint.path]);
-  const gatewaySearch = ["todos-search", "todos-advanced-search"].includes(endpoint.id);
+  const gatewayEndpoint = endpoint.tags?.includes("Web") || endpoint.tags?.includes("Multi-API");
   const effectiveToken = accountKey || "";
   const accountTag = effectiveToken ? effectiveToken.slice(0, 12) : "anon";
   const currentUnavailable = unavailableMap[`${accountTag}::${endpoint.id}`] || "";
@@ -494,7 +494,7 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
               )}
             </div>
             <CardDescription className="break-all font-mono text-xs">
-              {gatewaySearch ? "网关搜索 · " : "https://tower.im"}{readOnly ? endpoint.path : resolvedPath}
+              {gatewayEndpoint ? "网关接口 · " : "https://tower.im"}{readOnly ? endpoint.path : resolvedPath}
               {!readOnly && query.trim() ? `?${query.trim().replace(/^\?/, "")}` : ""}
             </CardDescription>
             {!readOnly && (
@@ -657,7 +657,7 @@ export default function ApiExplorer({ accountKey, accountLabel }) {
                   >
                     {renameLocked ? "仅团队超级管理员可执行" : loading ? "请求中..." : "发送请求"}
                   </Button>
-                  {!gatewaySearch && <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
+                  {!gatewayEndpoint && <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
                     {copiedKey === "curl" ? <CheckIcon /> : <CopyIcon />}
                     {copiedKey === "curl" ? "已复制 curl" : "复制 curl"}
                   </Button>}

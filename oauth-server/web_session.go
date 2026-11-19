@@ -205,7 +205,11 @@ func (client *webClient) request(ctx context.Context, method, rawURL string, bod
 		return 0, "", err
 	}
 	defer resp.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 3<<20))
+	const maxWebResponseSize = 3 << 20
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, maxWebResponseSize+1))
+	if err == nil && len(payload) > maxWebResponseSize {
+		return resp.StatusCode, "", errors.New("Tower 网页响应超过 3 MiB，无法读取完整结果")
+	}
 	if err != nil {
 		return resp.StatusCode, "", err
 	}
@@ -274,6 +278,13 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 	for key, val := range args {
 		v := stringifyArg(val)
 		switch key {
+		case "tag":
+			raw, ok := val.(string)
+			name := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "#"))
+			if !ok || name == "" {
+				return nil, errors.New("tag 须为非空字符串")
+			}
+			v = "#" + name
 		case "keyword", "target_gid", "member_guid":
 			if _, ok := val.(string); !ok {
 				return nil, fmt.Errorf("%s 须为字符串", key)
@@ -296,8 +307,8 @@ func webSearchQuery(args map[string]any) (url.Values, error) {
 		}
 		q.Set(key, v)
 	}
-	if q.Get("keyword") == "" {
-		return nil, errors.New("keyword 不能为空")
+	if strings.TrimSpace(q.Get("keyword")) == "" && q.Get("tag") == "" {
+		return nil, errors.New("keyword 或 tag 至少须填写一项")
 	}
 	return q, nil
 }
@@ -329,6 +340,9 @@ func (client *webClient) searchTodos(ctx context.Context, query url.Values) (map
 		}
 	}
 	result := map[string]any{"keyword": query.Get("keyword"), "items": items, "count": len(items), "page": page, "has_more": more}
+	if tag := query.Get("tag"); tag != "" {
+		result["tag"] = tag
+	}
 	if more {
 		result["next_page"] = page + 1
 	}

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ func projectTodosToolDefinition() map[string]any {
 
 type projectTodoScan struct {
 	lists     []string
+	listPage  upstreamProjectPage
 	listIndex int
 	taskPage  upstreamProjectPage
 	rows      []map[string]any
@@ -43,8 +45,9 @@ type projectTodoScan struct {
 }
 
 type upstreamProjectPage struct {
-	number int
-	seen   map[[32]byte]bool
+	number              int
+	seen                map[[32]byte]bool
+	includeFilterFields bool
 }
 
 type savedProjectScan struct {
@@ -54,6 +57,7 @@ type savedProjectScan struct {
 	store     *Store
 	projectID string
 	completed bool
+	filterKey string
 	expires   time.Time
 }
 
@@ -161,41 +165,80 @@ func (state *upstreamProjectPage) fetch(ctx context.Context, cfg Config, key str
 		}
 		for i, row := range doc.Data {
 			item := compactResource(row, false, included)
-			addTodoListDates(item, row)
-			doc.Data[i] = resultProfiles["list_todos"].selectFields(item)
+			if state.includeFilterFields {
+				// Keep the original field values during condition evaluation.
+				attrs, _ := row["attributes"].(map[string]any)
+				if due, ok := attrs["due_at"]; ok {
+					item["due_at"] = due
+				}
+				doc.Data[i] = item
+			} else {
+				addTodoListDates(item, row)
+				doc.Data[i] = resultProfiles["list_todos"].selectFields(item)
+			}
 		}
 	}
 	return doc.Data, nil
 }
 
 func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAccount, args map[string]any) (string, bool) {
+	out, err := scanProjectTodos(ctx, cfg, key, acc, args, nil)
+	if err != nil {
+		return err.Error(), true
+	}
+	return resultProfiles["list_project_todos"].text(out), false
+}
+
+func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAccount, args map[string]any, filter *projectTodoFilter) (map[string]any, error) {
 	projectID := stringifyArg(args["project_id"])
 	if projectID == "" {
-		return "缺少必填参数 project_id", true
+		return nil, fmt.Errorf("缺少必填参数 project_id")
 	}
 	completed := stringifyArg(args["completed_todo"]) != "false"
+	var filterKey string
+	if filter != nil {
+		completed = filter.Status != "uncompleted"
+		encoded, _ := json.Marshal(filter)
+		filterKey = string(encoded)
+	}
 	keyHash := sha256.Sum256([]byte(key))
 	pageSize := clampPageSize(stringifyArg(args["page_size"]))
-	scan := projectTodoScan{seen: make(map[string]bool)}
+	scan := projectTodoScan{
+		seen:     make(map[string]bool),
+		listPage: upstreamProjectPage{number: 1},
+		taskPage: upstreamProjectPage{number: 1, includeFilterFields: filter != nil},
+	}
+	requests := 0
+	canFetch := func() bool { return filter == nil || requests < projectFilterRequestLimit }
 
 	if cursor := stringifyArg(args["cursor"]); cursor != "" {
 		projectScanCache.Lock()
 		saved, ok := projectScanCache.entries[cursor]
 		projectScanCache.Unlock()
 		if !ok || !saved.expires.After(time.Now()) || saved.keyHash != keyHash || saved.store != cfg.Store || saved.baseURL != cfg.BaseURL ||
-			saved.projectID != projectID || saved.completed != completed {
-			return "cursor 已失效或与本次查询不匹配，请从第一页开始", true
+			saved.projectID != projectID || saved.completed != completed || saved.filterKey != filterKey {
+			if filter != nil {
+				return nil, fmt.Errorf("%w：cursor 已失效或与本次查询不匹配，请从第一页开始", errWebArguments)
+			}
+			return nil, fmt.Errorf("cursor 已失效或与本次查询不匹配，请从第一页开始")
 		}
 		scan = saved.scan
 		scan.seen = maps.Clone(scan.seen)
 		scan.taskPage.seen = maps.Clone(scan.taskPage.seen)
-	} else {
+	}
+	if scan.listPage.number > 0 {
+		scan.listPage.seen = maps.Clone(scan.listPage.seen)
+		scan.lists = slices.Clone(scan.lists)
 		path := "/api/v1/projects/" + url.PathEscape(projectID) + "/todolists"
 		seenLists := make(map[string]bool)
-		for state := (upstreamProjectPage{number: 1}); state.number > 0; {
-			lists, err := state.fetch(ctx, cfg, key, acc, path, false, completed)
+		for _, id := range scan.lists {
+			seenLists[id] = true
+		}
+		for scan.listPage.number > 0 && canFetch() {
+			requests++
+			lists, err := scan.listPage.fetch(ctx, cfg, key, acc, path, false, completed)
 			if err != nil {
-				return err.Error(), true
+				return nil, err
 			}
 			for _, row := range lists {
 				id := row["id"].(string)
@@ -205,9 +248,6 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 				}
 			}
 		}
-		if len(scan.lists) > 0 {
-			scan.taskPage.number = 1
-		}
 	}
 
 	items := make([]any, 0, pageSize)
@@ -215,21 +255,28 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 		items = append(items, scan.pending)
 		scan.pending = nil
 	}
-	for scan.listIndex < len(scan.lists) {
+	for scan.listPage.number == 0 && scan.listIndex < len(scan.lists) {
 		listID := scan.lists[scan.listIndex]
 		if len(scan.rows) == 0 {
 			if scan.taskPage.number == 0 {
 				scan.listIndex++
-				scan.taskPage = upstreamProjectPage{number: 1}
+				scan.taskPage = upstreamProjectPage{number: 1, includeFilterFields: filter != nil}
 				continue
 			}
+			if !canFetch() {
+				break
+			}
 			path := "/api/v1/todolists/" + url.PathEscape(listID) + "/todos"
+			requests++
 			rows, err := scan.taskPage.fetch(ctx, cfg, key, acc, path, true, completed)
 			if err != nil {
-				return err.Error(), true
+				return nil, err
 			}
 			scan.rows = rows
 			continue
+		}
+		if !canFetch() {
+			break
 		}
 		row := scan.rows[0]
 		scan.rows = scan.rows[1:]
@@ -237,18 +284,35 @@ func executeListProjectTodos(ctx context.Context, cfg Config, key string, acc *S
 		if scan.seen[id] {
 			continue
 		}
-		scan.seen[id] = true
 		item := maps.Clone(row)
 		item["todolist_id"] = listID
+		if filter != nil {
+			detail := func() (map[string]any, error) {
+				requests++
+				return fetchProjectTodoDetail(ctx, cfg, key, acc, id)
+			}
+			matched, err := filter.matches(item, detail)
+			if err != nil {
+				return nil, err
+			}
+			if !matched {
+				continue
+			}
+			addTodoListDates(item, item)
+			item = resultProfiles["list_todos"].selectFields(item)
+			item["todolist_id"] = listID
+		}
+		scan.seen[id] = true
 		if len(items) == pageSize {
 			scan.pending = item
 			break
 		}
 		items = append(items, item)
 	}
-	out := map[string]any{"project_id": projectID, "page_size": pageSize, "returned": len(items), "has_more": scan.pending != nil, "items": items}
-	if scan.pending != nil {
-		out["next_cursor"] = saveProjectScan(savedProjectScan{scan: scan, keyHash: keyHash, baseURL: cfg.BaseURL, store: cfg.Store, projectID: projectID, completed: completed})
+	hasMore := scan.pending != nil || scan.listPage.number > 0 || scan.listIndex < len(scan.lists)
+	out := map[string]any{"project_id": projectID, "page_size": pageSize, "returned": len(items), "has_more": hasMore, "items": items}
+	if hasMore {
+		out["next_cursor"] = saveProjectScan(savedProjectScan{scan: scan, keyHash: keyHash, baseURL: cfg.BaseURL, store: cfg.Store, projectID: projectID, completed: completed, filterKey: filterKey})
 	}
-	return resultProfiles["list_project_todos"].text(out), false
+	return out, nil
 }

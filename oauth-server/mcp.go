@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -586,6 +587,19 @@ func buildToolSchema(spec mcpToolSpec) map[string]any {
 		case "string_array":
 			prop["type"] = "array"
 			prop["items"] = map[string]any{"type": "string"}
+		case "conditions":
+			prop["type"] = "array"
+			prop["minItems"] = 1
+			prop["maxItems"] = 20
+			text := map[string]string{"type": "string"}
+			prop["items"] = map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"field": text, "operator": text,
+					"value": map[string]any{"oneOf": []any{text, map[string]any{"type": "array", "items": text}}},
+				},
+				"required": []string{"field", "operator"}, "additionalProperties": false,
+			}
 		case "int_array":
 			prop["type"] = "array"
 			prop["items"] = map[string]any{"type": "integer"}
@@ -610,7 +624,7 @@ func buildToolSchema(spec mcpToolSpec) map[string]any {
 }
 
 func totalMCPToolCount() int {
-	return len(towerMCPTools) + 8
+	return len(resultProfiles)
 }
 
 func isSafeTodoStateDelete(apiPath string) bool {
@@ -621,8 +635,8 @@ func isSafeTodoStateDelete(apiPath string) bool {
 
 func listMCPToolDefinitions() []map[string]any {
 	out := make([]map[string]any, 0, totalMCPToolCount())
-	for _, spec := range towerMCPTools {
-		isReadOnly := spec.Method == http.MethodGet
+	for _, spec := range slices.Concat(towerMCPTools, gatewayTaskTools) {
+		isReadOnly := spec.Method == http.MethodGet || spec.Name == "filter_project_todos"
 		isDestructive := spec.Method == http.MethodDelete && !isSafeTodoStateDelete(spec.PathTemplate)
 		out = append(out, map[string]any{
 			"name":        spec.Name,
@@ -675,7 +689,7 @@ func listMCPToolDefinitions() []map[string]any {
 		},
 		map[string]any{
 			"name":        "search_todos",
-			"description": "使用 Tower 网页搜索按关键词查找任务。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
+			"description": "使用 Tower 网页按关键词或标签搜索。需要该账号已完成网页登录。在已加入的团队中搜索。result_time 为 Tower 网页展示的结果时间。查询任务的创建或更新时间请使用 get_todo。",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -685,9 +699,10 @@ func listMCPToolDefinitions() []map[string]any {
 					"member_guid":   map[string]any{"type": "string", "description": "网页成员筛选器中的成员 GUID。"},
 					"sort":          map[string]any{"type": "integer", "enum": []int{1, 2}, "description": "1 时间顺序（默认），2 相关度。"},
 					"exclude_trash": map[string]any{"type": "boolean", "default": true, "description": "隐藏回收站内容。"},
-					"keyword":       map[string]any{"type": "string", "description": "搜索关键词"},
+					"keyword":       map[string]any{"type": "string", "description": "搜索关键词；与 tag 至少提供一项"},
+					"tag":           map[string]any{"type": "string", "description": "标签名称，可带 #"},
 				},
-				"required": []string{"keyword"},
+				"anyOf": []map[string]any{{"required": []string{"keyword"}}, {"required": []string{"tag"}}},
 			},
 			"annotations": map[string]any{
 				"title":           "搜索任务",
@@ -806,8 +821,11 @@ func listMCPToolDefinitions() []map[string]any {
 		case "get_current_datetime":
 			source = "Gateway"
 		}
+		if _, ok := gatewayTaskSpec(tool["name"].(string)); ok && tool["name"] != "filter_project_todos" {
+			source = "Web"
+		}
 		meta := map[string]any{"agents-tower/source": source}
-		if tool["name"] == "advanced_search_todos" || tool["name"] == "list_project_todos" {
+		if tool["name"] == "advanced_search_todos" || tool["name"] == "list_project_todos" || tool["name"] == "filter_project_todos" {
 			meta["agents-tower/tags"] = []string{"Multi-API"}
 		}
 		tool["_meta"] = meta
@@ -1009,6 +1027,10 @@ func executeMCPTool(
 	}
 	if name == "search_todos" {
 		return executeSearchTodos(ctx, cfg, mcpKey, acc, args)
+	}
+	if spec, ok := gatewayTaskSpec(name); ok {
+		result, err := runGatewayTask(ctx, cfg, acc, spec, args)
+		return webToolText(name, result, err)
 	}
 	if name == "add_todo_project" {
 		return executeAddTodoProject(ctx, cfg, acc, args)

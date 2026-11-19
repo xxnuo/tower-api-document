@@ -25,7 +25,17 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 
 - 服务端会自动管理并续期底层 Tower OAuth Token，`AGENTS_TOWER_API_KEY` 长期有效（除非用户在控制台手动重置）。
 
-按关键词查找任务可调用 `search_todos`，必填 `keyword`。可选 `target_gid`、`member_guid`、`category`、`sort`、`exclude_trash`。每次返回各团队的一页，收到 `next_page` 时保留筛选条件并将其作为 `page` 继续。要按 API 项目 ID、团队或完成状态扫描时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
+按关键词或标签查询用 `search_todos`，提供 `keyword` 或 `tag`（标签可带 `#`）。可选 `target_gid`、`member_guid`、`category`、`sort`、`exclude_trash`。每次返回各团队的一页，收到 `next_page` 时保留筛选条件并将其作为 `page` 继续。要按 API 项目 ID、团队或完成状态扫描时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
+
+网页搜索的 `tag` 会命中 Tower 索引中的 `#标签` 内容；查询任务上的结构化标签请使用下面的 `label` 条件。
+
+项目内条件查询用 `filter_project_todos`（Multi-API）。例如传 `conditions: [{"field":"label","operator":"in","value":"bug"},{"field":"custom.<字段 key>","operator":"in","value":"Web"}]`、`status: "uncompleted"` 和 `project_id`。字段筛选使用选项显示名称，任务写入使用选项 ID。有 `next_cursor` 时保持原条件继续请求，扫描中的空页也可能有后续结果。
+
+登录 Tower 网页后还可使用以下工具。
+
+- `get_project_task_fields(project_id)` 查询当前项目的标签 ID、自定义字段 key 和选项。用返回值调用已有的 `create_todo`、`update_todo`。
+- `move_todo_in_project(todo_id, project_id, todolist_id)` 将已有任务在指定项目内移到目标清单。跨项目添加映射使用 `add_todo_project`，指定父任务使用 `update_todo.parent_id`。
+- `list_todo_history(todo_id)` 按时间从早到晚返回变更记录与评论。每页默认 20 条，可传 `page_size`（1–50），收到 `next_offset` 时将其作为 `offset` 继续。
 
 ## 2. 标准 ID 查询链路
 

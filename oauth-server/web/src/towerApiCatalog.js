@@ -89,12 +89,17 @@ export const TOWER_API_CATALOG = [
   },
   { id: "todolists-delete", group: "任务清单", name: "删除任务清单", method: "DELETE", path: "/api/v1/todolists/{id}" },
 
+  { id: "project-task-fields", group: "项目", name: "查询可用标签、自定义字段及选项", tags: ["Web"], method: "GET", path: "/api/v1/projects/{project_id}/task_fields" },
+  { id: "project-filter-todos", group: "任务", name: "按项目字段组合筛选任务", tags: ["API", "Multi-API"], method: "POST", path: "/api/v1/projects/{project_id}/filter_todos", defaultBody: '{\n  "conditions": [{"field": "title", "operator": "in", "value": "测试"}],\n  "status": "uncompleted"\n}' },
+  { id: "todo-history", group: "任务", name: "按时间读取任务变更和评论", tags: ["Web"], method: "GET", path: "/api/v1/todos/{todo_id}/history", defaultQuery: "offset=0&page_size=20" },
+  { id: "todo-move-in-project", group: "任务", name: "移到同项目的另一清单", tags: ["Web"], method: "PATCH", path: "/api/v1/todos/{todo_id}/move_in_project", defaultBody: '{\n  "project_id": "",\n  "todolist_id": ""\n}' },
+
   // 任务
   {
     id: "todos-search",
     tags: ["Web"],
     group: "任务",
-    name: "搜索任务（网页）",
+    name: "按关键词或标签搜索任务（网页）",
     method: "GET",
     path: "/api/v1/todos/search",
     defaultQuery: "keyword=",

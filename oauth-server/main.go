@@ -775,6 +775,9 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 		}
 
 		rawQuery := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?")
+		if serveGatewayTaskProxy(writer, req, cfg, method, apiPath, rawQuery, payload.Body, strings.TrimSpace(payload.AccessToken)) {
+			return
+		}
 		if method == http.MethodGet && apiPath == "/api/v1/todos/advanced_search" {
 			started := time.Now()
 			qVals, _ := url.ParseQuery(rawQuery)
