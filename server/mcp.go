@@ -80,7 +80,7 @@ func pBody(name, typ string, required bool, desc string) mcpParam {
 
 const todoLinkHint = `从分享文本或裸链接 https://tower.im/teams/750316/todos/75345/（末尾 / 可省略）直接调用 get_todo_by_number(team_id="750316", team_wide_id="75345")。`
 
-const agentSignatureHint = `在正文 HTML 末尾追加一次署名：<p><span style="font-size:12px;color:#999">{{助手名}} 代发 · {{模型名}}</span></p>。用当前会话可确认的实际名称替换占位符，按 HTML 文本转义。助手名未知时填“AI 助手”，模型名未知时省略“ · {{模型名}}”。`
+const agentSignatureHint = `在正文 HTML 末尾追加一次署名：<p><span style="font-size:12px;color:#999">{{助手名}} 代发 · {{模型名}}</span></p>。发送前分别核对启动本会话的客户端名称和本会话选用的完整模型 ID，按 HTML 文本转义。优先使用宿主提供的会话信息。例如 Pi 的 shell 工具有 PI_SESSION_ID 和 PI_MODEL，可据此填写 Pi 和 PI_MODEL 的原值。不要从模型名前缀推断客户端，也不要沿用历史评论、示例署名或默认配置。无法核实客户端时填“AI 助手”，无法核实模型时省略“ · {{模型名}}”。`
 
 var towerMCPTools = []mcpToolSpec{
 	// 用户
