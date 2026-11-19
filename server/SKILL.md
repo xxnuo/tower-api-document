@@ -12,7 +12,7 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 ```json
 {
   "mcpServers": {
-    "tower": {
+    "{{MCP_SERVER_NAME}}": {
       "type": "http",
       "url": "{{MCP_URL}}",
       "headers": {
@@ -24,6 +24,7 @@ description: Use Tower.im team collaboration platform via AgentsTower Streamable
 ```
 
 - 服务端会自动管理并续期底层 Tower OAuth Token，`AGENTS_TOWER_API_KEY` 长期有效（除非用户在控制台手动重置）。
+- 在控制台切换 Tower 账号后复制对应的客户端配置。账号专用路径为 `/{hash}/mcp`，无 hash 的 `/mcp` 使用当前用户最早绑定且仍保留的 Tower 账号。
 
 按关键词或标签查询用 `search_todos`，须提供非空的 `keyword` 或 `tag`（标签可带 `#`）。提供有效标签时会忽略空白关键词。`member_guid`（即 Tower API 成员 ID）用于附加筛选，传入时只搜索该成员所属团队。可选参数还包括 `target_gid`、`category`、`sort`、`exclude_trash`。每次返回各搜索团队的一页，收到 `next_page` 时保留筛选条件并将其作为 `page` 继续。要按 API 项目 ID、团队或完成状态扫描时使用 `advanced_search_todos`，它通过 Tower API 限量扫描任务。
 

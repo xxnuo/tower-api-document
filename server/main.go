@@ -258,10 +258,19 @@ func newMux(cfg Config) http.Handler {
 	})
 	mux.HandleFunc("GET /api/skill.md", func(writer http.ResponseWriter, req *http.Request) {
 		skillMCPURL := mcpURL
-		if mcpBaseURL == "" {
-			skillMCPURL = requestBaseURL(req) + mcpURL
+		serverName := "tower"
+		if hash := req.URL.Query().Get("account"); hash != "" {
+			if !mcpAccountHashPattern.MatchString(hash) {
+				http.NotFound(writer, req)
+				return
+			}
+			skillMCPURL = mcpBaseURL + "/" + hash + "/mcp"
+			serverName += "-" + hash
 		}
-		content := strings.ReplaceAll(embeddedSkillMD, "{{MCP_URL}}", skillMCPURL)
+		if mcpBaseURL == "" {
+			skillMCPURL = requestBaseURL(req) + skillMCPURL
+		}
+		content := strings.NewReplacer("{{MCP_URL}}", skillMCPURL, "{{MCP_SERVER_NAME}}", serverName).Replace(embeddedSkillMD)
 		writer.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		if req.URL.Query().Get("download") == "1" {
 			writer.Header().Set("Content-Disposition", `attachment; filename="SKILL.md"`)
@@ -302,10 +311,10 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/admin/settings", requireAdmin(cfg, handleAdminUpdateSettings(cfg)))
 
 	mcpHandler := handleMCP(cfg)
-	mux.HandleFunc("POST /mcp", mcpHandler)
-	mux.HandleFunc("GET /mcp", mcpHandler)
-	mux.HandleFunc("DELETE /mcp", mcpHandler)
-	mux.HandleFunc("OPTIONS /mcp", mcpHandler)
+	for _, method := range []string{"POST", "GET", "DELETE", "OPTIONS"} {
+		mux.HandleFunc(method+" /mcp", mcpHandler)
+		mux.HandleFunc(method+" /{hash}/mcp", mcpHandler)
+	}
 	mux.HandleFunc("GET /login", requireAuth(cfg, handleLogin(cfg)))
 	mux.HandleFunc("GET /oauth2/callback", requireAuth(cfg, handleCallback(cfg)))
 	mux.HandleFunc("POST /oauth2/code", requireAuth(cfg, handleManualCode(cfg)))

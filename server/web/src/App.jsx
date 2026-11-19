@@ -370,7 +370,7 @@ export default function App() {
 
   async function handleCopySkillMD() {
     try {
-      const res = await fetch("/api/skill.md");
+      const res = await fetch(skillURL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       let text = await res.text();
       if (mcpKey) {
@@ -658,11 +658,15 @@ export default function App() {
   const mcpKey = creds?.mcp_api_key || "";
   const secretValues = [token?.access_token, token?.refresh_token, mcpKey].filter(Boolean);
   const maskIfHidden = (text) => (showSecrets ? text : maskSecretsInText(text, secretValues));
-  const mcpServerURL = new URL(config.mcp_url || "/mcp", window.location.origin).href;
+  const mcpHash = creds?.mcp_hash;
+  const mcpURL = new URL(config.mcp_url || "/mcp", window.location.origin);
+  if (mcpHash) mcpURL.pathname = mcpURL.pathname.replace(/\/mcp$/, `/${mcpHash}/mcp`);
+  const mcpServerURL = mcpURL.href;
+  const skillURL = mcpHash ? `/api/skill.md?account=${mcpHash}` : "/api/skill.md";
   const mcpConfigSnippet = JSON.stringify(
     {
       mcpServers: {
-        tower: {
+        [mcpHash ? `tower-${mcpHash}` : "tower"]: {
           type: "http",
           url: mcpServerURL,
           headers: {
@@ -1113,7 +1117,7 @@ export default function App() {
                         <div className="flex flex-wrap gap-2">
                           <Button size="sm" onClick={() => navigateToTab("mcp")}>测试 MCP 连接</Button>
                           <Button size="sm" variant="outline" onClick={handleCopySkillMD}>{skillCopied ? "已复制" : "复制 Agent 指南"}</Button>
-                          <a href="/api/skill.md?download=1" download="SKILL.md" className={buttonVariants({variant:"outline",size:"sm"})}>下载指南</a>
+                          <a href={`${skillURL}${mcpHash ? "&" : "?"}download=1`} download="SKILL.md" className={buttonVariants({variant:"outline",size:"sm"})}>下载指南</a>
                         </div>
                         <details className="space-y-3 border-t pt-3">
                           <summary className="cursor-pointer text-xs font-medium">管理 MCP 密钥</summary>

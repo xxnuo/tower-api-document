@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -762,6 +763,49 @@ func (s *Store) GetByMCPKey(mcpKey string) (*StoredAccount, error) {
 	}
 	row := s.db.QueryRow(`SELECT `+selectAccountCols+` FROM accounts WHERE mcp_api_key = ?`, key)
 	return scanAccount(row)
+}
+
+func (acc StoredAccount) mcpHash() string {
+	id := acc.TowerID
+	if id == "" {
+		id = acc.ID
+	}
+	sum := sha256.Sum256([]byte(id))
+	return base64.RawURLEncoding.EncodeToString(sum[:5])[:6]
+}
+
+func (s *Store) accountForMCPRoute(key, hash string) (*StoredAccount, error) {
+	owner, err := s.GetByMCPKey(key)
+	if err != nil {
+		return nil, err
+	}
+	if owner.UserID == 0 {
+		if hash != "" && hash != owner.mcpHash() {
+			return nil, ErrAccountNotFound
+		}
+		return owner, nil
+	}
+	if hash == "" {
+		return scanAccount(s.db.QueryRow(`SELECT `+selectAccountCols+` FROM accounts WHERE user_id = ? ORDER BY created_at, rowid LIMIT 1`, owner.UserID))
+	}
+	accounts, err := s.ListAccountsByUser(owner.UserID)
+	if err != nil {
+		return nil, err
+	}
+	var match *StoredAccount
+	for _, account := range accounts {
+		if account.mcpHash() != hash {
+			continue
+		}
+		if match != nil {
+			return nil, ErrAccountNotFound
+		}
+		match = &account
+	}
+	if match == nil {
+		return nil, ErrAccountNotFound
+	}
+	return match, nil
 }
 
 func (s *Store) GetByAccessToken(accessToken string) (*StoredAccount, error) {

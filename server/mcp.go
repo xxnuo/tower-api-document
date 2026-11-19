@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var mcpAccountHashPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{6}$`)
 
 const (
 	defaultListPageSize = 20
@@ -933,6 +936,11 @@ func handleMCP(cfg Config) http.HandlerFunc {
 	transport := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 
 	return func(writer http.ResponseWriter, req *http.Request) {
+		hash := req.PathValue("hash")
+		if hash != "" && !mcpAccountHashPattern.MatchString(hash) {
+			http.NotFound(writer, req)
+			return
+		}
 		setMCPHeaders(writer)
 		switch req.Method {
 		case http.MethodOptions:
@@ -967,10 +975,13 @@ func handleMCP(cfg Config) http.HandlerFunc {
 			})
 			return
 		}
-		acc, err := cfg.Store.EnsureFreshToken(cfg, mcpKey, false)
+		acc, err := cfg.Store.accountForMCPRoute(mcpKey, hash)
+		if err == nil {
+			acc, err = cfg.Store.EnsureFreshToken(cfg, acc.MCPAPIKey, false)
+		}
 		if err != nil {
 			status := http.StatusUnauthorized
-			msg := "无效的 AGENTS_TOWER_API_KEY，请在 AgentsTower 网页重新获取"
+			msg := "无效的 AGENTS_TOWER_API_KEY 或账号路径，请在 AgentsTower 网页重新获取配置"
 			if !errors.Is(err, ErrAccountNotFound) {
 				msg = err.Error()
 			}

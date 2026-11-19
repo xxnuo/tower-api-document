@@ -105,6 +105,7 @@ type boundAccount struct {
 	AccountID    string    `json:"account_id"`
 	User         *UserInfo `json:"user"`
 	MCPAPIKey    string    `json:"mcp_api_key"`
+	MCPHash      string    `json:"mcp_hash"`
 	WebConnected bool      `json:"web_connected"`
 }
 
@@ -119,7 +120,7 @@ func userLoginResults(cfg Config, userID int64) []boundAccount {
 	out := make([]boundAccount, 0, len(stored))
 	for i := range stored {
 		acc := stored[i]
-		item := boundAccount{AccountID: acc.ID, User: acc.ToLoginResult().User, MCPAPIKey: acc.MCPAPIKey}
+		item := boundAccount{AccountID: acc.ID, User: acc.ToLoginResult().User, MCPAPIKey: acc.MCPAPIKey, MCPHash: acc.mcpHash()}
 		if _, sessErr := cfg.Store.GetWebSession(stored[i].ID); sessErr == nil {
 			item.WebConnected = true
 		}

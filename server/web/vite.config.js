@@ -45,6 +45,7 @@ export default defineConfig({
     proxy: {
       "/sitemap.xml": "http://localhost:8888",
       "/llms.txt": "http://localhost:8888",
+      "^/(?:[A-Za-z0-9_-]{6}/)?mcp(?:\\?|$)": "http://localhost:8888",
       "/login": "http://localhost:8888",
       "/oauth2": "http://localhost:8888",
       "/api": "http://localhost:8888",

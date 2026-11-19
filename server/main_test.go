@@ -706,6 +706,67 @@ func TestSQLiteStorePersistenceAndAccountManagement(t *testing.T) {
 	}
 }
 
+func TestMCPAccountRoutes(t *testing.T) {
+	tower := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"data": []any{
+			map[string]any{"id": strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")},
+		}})
+	}))
+	defer tower.Close()
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	bind := func(owner int64, towerID, token string) *StoredAccount {
+		t.Helper()
+		acc, err := store.SaveLoginForUser(owner, &UserInfo{ID: towerID}, TokenResponse{AccessToken: token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return acc
+	}
+	first := bind(1, "tower-first", "first-token")
+	second := bind(1, "tower-second", "second-token")
+	foreign := bind(2, "tower-foreign", "foreign-token")
+	if len(first.mcpHash()) != 6 || first.mcpHash() == second.mcpHash() {
+		t.Fatal("expected distinct six-character account hashes")
+	}
+	if rebound := bind(1, "tower-first", "first-rebound"); rebound.mcpHash() != first.mcpHash() {
+		t.Fatal("account hash changed on reauthorization")
+	}
+	cfg := testConfig(tower.URL)
+	cfg.Store = store
+	mux := newMux(cfg)
+	for _, test := range []struct {
+		name, path, key, token string
+		status                 int
+	}{
+		{"legacy uses first binding", "/mcp", second.MCPAPIKey, "first-rebound", http.StatusOK},
+		{"explicit second binding", "/" + second.mcpHash() + "/mcp", first.MCPAPIKey, "second-token", http.StatusOK},
+		{"cross-user binding", "/" + foreign.mcpHash() + "/mcp", first.MCPAPIKey, "", http.StatusUnauthorized},
+		{"hash without key", "/" + second.mcpHash() + "/mcp", "", "", http.StatusUnauthorized},
+		{"malformed hash", "/short/mcp", first.MCPAPIKey, "", http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_teams","arguments":{}}}`))
+			req.Header.Set("AGENTS_TOWER_API_KEY", test.key)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != test.status || !strings.Contains(rec.Body.String(), test.token) {
+				t.Fatalf("response = %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	guide := httptest.NewRecorder()
+	mux.ServeHTTP(guide, httptest.NewRequest(http.MethodGet, "/api/skill.md?account="+second.mcpHash(), nil))
+	if guide.Code != http.StatusOK || !strings.Contains(guide.Body.String(), "/"+second.mcpHash()+"/mcp") ||
+		!strings.Contains(guide.Body.String(), `"tower-`+second.mcpHash()+`"`) {
+		t.Fatalf("guide did not use the account path: %d", guide.Code)
+	}
+}
+
 func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	refreshed := false
 	tower := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
