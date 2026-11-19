@@ -140,7 +140,7 @@ export default function AuthScreen({
 
   return (
     <div className="min-h-dvh flex flex-col justify-center items-center px-4 py-10 bg-background bg-tech-grid">
-      <div className="fixed top-4 right-4 z-10">
+      <div className={`fixed top-4 z-10 ${import.meta.env.DEV ? "right-20" : "right-4"}`}>
         <Button type="button" variant="outline" size="sm" onClick={onToggleTheme}>
           主题：{themeLabel}
         </Button>

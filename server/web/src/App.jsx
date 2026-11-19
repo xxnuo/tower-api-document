@@ -899,7 +899,7 @@ ${mcpConfigSnippet}
 
       {/* 移动端顶部紧凑导航条 */}
       <div className="flex md:hidden flex-col border-b border-sidebar-border bg-sidebar shrink-0">
-        <div className="flex items-center justify-between px-3 py-2 border-b border-sidebar-border/60">
+        <div className={`flex items-center justify-between px-3 py-2 border-b border-sidebar-border/60 ${import.meta.env.DEV ? "pr-20" : ""}`}>
           <div className="flex items-center gap-2">
             <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-xs">
               <BrandMark className="size-3.5" />
