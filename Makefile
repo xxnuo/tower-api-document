@@ -1,6 +1,10 @@
-.PHONY: install build-web build run dev test
+.PHONY: install build-web build run dev test version bump docker-build docker-push
 
 AIR := $(shell command -v air 2>/dev/null || echo $(HOME)/go/bin/air)
+VERSION_COMMAND := node -p "require('./oauth-server/web/package.json').version"
+IMAGE := registry.lazycat.cloud/x/agentstower
+BUMP ?= patch
+export BUMP
 
 install:
 	cd oauth-server/web && pnpm install
@@ -20,3 +24,21 @@ dev: build-web
 
 test: build-web
 	cd oauth-server && go test -v ./... && go vet ./...
+
+version:
+	@$(VERSION_COMMAND)
+
+bump:
+	@case "$$BUMP" in \
+		patch|minor|major) cd oauth-server/web && pnpm version "$$BUMP" --no-git-tag-version --no-git-checks ;; \
+		*) echo "Usage: make bump BUMP=patch|minor|major" >&2; exit 1 ;; \
+	esac
+
+docker-build docker-push:
+	@set -e; version=$$($(VERSION_COMMAND)); image="$(IMAGE):$$version"; \
+	docker build --load --build-arg VERSION="$$version" --tag "$$image" oauth-server; \
+	if [ "$@" = docker-push ]; then \
+		docker push "$$image"; \
+		docker tag "$$image" "$(IMAGE):latest"; \
+		docker push "$(IMAGE):latest"; \
+	fi

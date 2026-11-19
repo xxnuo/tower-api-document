@@ -1,8 +1,6 @@
 services:
   agents-tower:
-    build:
-      context: ./oauth-server
-      dockerfile: Dockerfile
+    image: registry.lazycat.cloud/x/agentstower:${AGENTSTOWER_TAG:-latest}
     container_name: agents-tower
     restart: unless-stopped
     ports:

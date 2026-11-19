@@ -1,0 +1,8 @@
+**/.env
+**/.env.*
+**/.git
+**/.tmp
+**/dist
+**/node_modules
+bin
+data

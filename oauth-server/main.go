@@ -37,6 +37,22 @@ var webDistFS embed.FS
 //go:embed SKILL.md
 var embeddedSkillMD string
 
+//go:embed web/package.json
+var webPackage []byte
+
+var appVersion = func() string {
+	var metadata struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(webPackage, &metadata); err != nil {
+		panic(err)
+	}
+	if metadata.Version == "" {
+		panic("missing version in web/package.json")
+	}
+	return metadata.Version
+}()
+
 type pendingEntry struct {
 	Payload   any
 	ExpiresAt time.Time
@@ -219,7 +235,7 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("GET /sitemap.xml", serveSiteIndex(cfg, "sitemap.xml", "application/xml"))
 	mux.HandleFunc("GET /llms.txt", serveSiteIndex(cfg, "llms.txt", "text/plain"))
 	mux.HandleFunc("GET /api/healthz", func(writer http.ResponseWriter, req *http.Request) {
-		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower"})
+		writeJSON(writer, http.StatusOK, map[string]string{"status": "ok", "service": "AgentsTower", "version": appVersion})
 	})
 	mux.HandleFunc("GET /api/config", func(writer http.ResponseWriter, req *http.Request) {
 		settings := cfg.Store.GetSettings()
@@ -1005,6 +1021,10 @@ func writeJSON(writer http.ResponseWriter, status int, val any) {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(appVersion)
+		return
+	}
 	if len(os.Args) > 1 {
 		loadDotEnv(".env")
 		dbPath := strings.TrimSpace(os.Getenv("DB_PATH"))

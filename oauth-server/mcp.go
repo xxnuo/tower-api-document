@@ -869,7 +869,7 @@ func handleMCP(cfg Config) http.HandlerFunc {
 	for _, spec := range towerMCPTools {
 		toolIndex[spec.Name] = spec
 	}
-	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: "1.0.0"}, &mcp.ServerOptions{
+	server := mcp.NewServer(&mcp.Implementation{Name: "AgentsTower", Version: appVersion}, &mcp.ServerOptions{
 		Instructions: "查询团队知识库时，用 search_todos(team_id, keyword, category=18) 搜索，再将命中的 team_id 和 url 传给 read_repository_item。浏览目录用 list_repositories 和 list_repository_items。完整分页枚举项目任务请用 list_project_todos。网页筛选与翻页请用 search_todos，按团队、项目 ID 或完成状态聚合扫描请用 advanced_search_todos。快速查询当前成员跨团队待办请直接调用 my_todo_overview；一步上传文件到项目请调用 upload_file。常规层级顺序：list_teams 获取 team_id -> list_projects 获取 project_id（或 list_team_members 获取 member_id）-> list_todolists 获取 todolist_id -> 查询、创建或完成任务（Tower 按目标任务权限执行）。标准列表工具默认每页 20 条（最大 50），按 meta.next_page 翻页；list_events 将 meta.next_cursor 传给 last_item_id。meta.returned 是本次返回数，meta.total 仅在可确认时提供。成员待办基于活跃且未完成的任务，任务关系不可用时可能回退到部分列表。my_todo_overview 未指定团队时最多检查 10 个团队。服务端默认开启硬删除保护（仅拦截删除项目/清单/任务/讨论/文件/工时等资源删除操作）。",
 	})
 	for _, def := range listMCPToolDefinitions() {

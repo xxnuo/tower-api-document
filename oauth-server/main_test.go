@@ -496,6 +496,12 @@ func TestHealthzAndCodeExtraction(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok"`) {
 		t.Fatalf("unexpected healthz response: %d %s", rec.Code, rec.Body.String())
 	}
+	var health struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &health); err != nil || health.Version != appVersion {
+		t.Fatalf("healthz version = %q, want %q (decode error: %v)", health.Version, appVersion, err)
+	}
 
 	if got := extractCodeInput(`  "http://localhost:8888/oauth2/callback?code=abc123&state=xyz" `); got != "abc123" {
 		t.Fatalf("expected extracted code abc123, got %q", got)
@@ -803,6 +809,9 @@ func TestMCPStreamableHTTPAndAutoRefresh(t *testing.T) {
 	defer session.Close()
 	if got := session.InitializeResult().ProtocolVersion; got != "2026-07-28" {
 		t.Fatalf("SDK negotiated protocol %q, want 2026-07-28", got)
+	}
+	if got := session.InitializeResult().ServerInfo.Version; got != appVersion {
+		t.Fatalf("MCP server version = %q, want %q", got, appVersion)
 	}
 	tools, err := session.ListTools(t.Context(), nil)
 	if err != nil || len(tools.Tools) == 0 {
