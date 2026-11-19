@@ -80,6 +80,8 @@ func pBody(name, typ string, required bool, desc string) mcpParam {
 
 const todoLinkHint = `从分享文本或裸链接 https://tower.im/teams/750316/todos/75345/（末尾 / 可省略）直接调用 get_todo_by_number(team_id="750316", team_wide_id="75345")。`
 
+const agentSignatureHint = `在正文 HTML 末尾追加一次署名：<p><small style="font-size:12px;color:#666666">{{助手名}} 代发 · {{模型名}}</small></p>。用当前会话可确认的实际名称替换占位符，按 HTML 文本转义。助手名未知时填“AI 助手”，模型名未知时省略“ · {{模型名}}”。`
+
 var towerMCPTools = []mcpToolSpec{
 	// 用户
 	{
@@ -373,7 +375,7 @@ var towerMCPTools = []mcpToolSpec{
 		Method: http.MethodPost, PathTemplate: "/api/v1/todos/{todo_id}/comments", BodyEnvelope: "comment",
 		Params: []mcpParam{
 			pPath("todo_id", "任务 ID"),
-			pBody("content", "string", true, "评论内容（支持富文本/HTML 或纯文本）"),
+			pBody("content", "string", true, "评论内容（支持富文本/HTML 或纯文本）。Agent 代发时，"+agentSignatureHint),
 		},
 	},
 	{
@@ -445,7 +447,7 @@ var towerMCPTools = []mcpToolSpec{
 		Params: []mcpParam{
 			pPath("project_id", "项目 ID"),
 			pBody("subject", "string", true, "讨论标题"),
-			pBody("content", "string", true, "讨论正文内容"),
+			pBody("content", "string", true, "讨论正文内容。Agent 代发时，"+agentSignatureHint),
 		},
 	},
 	{
@@ -883,6 +885,9 @@ func handleMCP(cfg Config) http.HandlerFunc {
 知识库
 - 搜索文档用 search_todos(team_id, keyword, category=18)，再把命中的 team_id 和 url 传给 read_repository_item。
 - 浏览目录用 list_repositories 和 list_repository_items。
+
+代发署名
+- 发表任务评论、发起讨论或回复讨论时，` + agentSignatureHint + `
 
 资源操作
 - 缺少 ID 时，用 list_teams 获取团队，再用 list_projects 或 list_team_members 获取项目或成员。项目内的任务清单用 list_todolists。
