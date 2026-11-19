@@ -80,7 +80,7 @@ func pBody(name, typ string, required bool, desc string) mcpParam {
 
 const todoLinkHint = `从分享文本或裸链接 https://tower.im/teams/750316/todos/75345/（末尾 / 可省略）直接调用 get_todo_by_number(team_id="750316", team_wide_id="75345")。`
 
-const agentSignatureHint = `在正文 HTML 末尾追加一次署名：<p><small style="font-size:12px;color:#666666">{{助手名}} 代发 · {{模型名}}</small></p>。用当前会话可确认的实际名称替换占位符，按 HTML 文本转义。助手名未知时填“AI 助手”，模型名未知时省略“ · {{模型名}}”。`
+const agentSignatureHint = `在正文 HTML 末尾追加一次署名：<p><span style="font-size:12px;color:#999">{{助手名}} 代发 · {{模型名}}</span></p>。用当前会话可确认的实际名称替换占位符，按 HTML 文本转义。助手名未知时填“AI 助手”，模型名未知时省略“ · {{模型名}}”。`
 
 var towerMCPTools = []mcpToolSpec{
 	// 用户
