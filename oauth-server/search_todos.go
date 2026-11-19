@@ -396,6 +396,9 @@ func executeSearchTodos(
 		return doTowerHTTPWithRefresh(callCtx, cfg, mcpKey, acc, http.MethodGet, path, query, nil)
 	}
 	status, payload := searchTodos(ctx, defaultTodoSearchLimiter, "mcp:"+mcpKey, fetch, params)
-	out, _ := json.MarshalIndent(payload, "", "  ")
+	if items, ok := payload["items"].([]map[string]any); ok {
+		payload["items"] = compactTodoItems(items)
+	}
+	out, _ := json.Marshal(payload)
 	return string(out), status >= 400
 }

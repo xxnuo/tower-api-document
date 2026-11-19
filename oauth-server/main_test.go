@@ -926,9 +926,25 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	req4.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec4 := httptest.NewRecorder()
 	mux.ServeHTTP(rec4, req4)
-	body4 := rec4.Body.String()
-	if rec4.Code != http.StatusOK || !strings.Contains(body4, `\"id\": 11`) || strings.Contains(body4, `\"id\": 1,`) || strings.Contains(body4, `\"id\": 21`) {
-		t.Fatalf("expected page 2 items 11..20, got: %s", body4)
+	var pageResult struct {
+		Result struct{ Content []struct{ Text string } }
+	}
+	if err := json.Unmarshal(rec4.Body.Bytes(), &pageResult); err != nil || len(pageResult.Result.Content) != 1 {
+		t.Fatal(rec4.Body.String())
+	}
+	var page struct {
+		Items []struct{ ID int }
+		Meta  struct {
+			HasMore bool `json:"has_more"`
+		}
+	}
+	if err := json.Unmarshal([]byte(pageResult.Result.Content[0].Text), &page); err != nil || len(page.Items) != 10 || !page.Meta.HasMore {
+		t.Fatal(rec4.Body.String())
+	}
+	for i, item := range page.Items {
+		if item.ID != 11+i {
+			t.Fatalf("unexpected page item %d: %d", i, item.ID)
+		}
 	}
 }
 
