@@ -223,7 +223,7 @@ func newMux(cfg Config) http.Handler {
 	})
 	mux.HandleFunc("GET /api/config", func(writer http.ResponseWriter, req *http.Request) {
 		settings := cfg.Store.GetSettings()
-		writeJSON(writer, http.StatusOK, map[string]any{
+		config := map[string]any{
 			"service":           "AgentsTower",
 			"is_oob":            isOOB(cfg),
 			"redirect_uri":      cfg.RedirectURI,
@@ -231,7 +231,14 @@ func newMux(cfg Config) http.Handler {
 			"mcp_tools":         totalMCPToolCount(),
 			"registration_mode": settings.RegistrationMode,
 			"allow_mcp_delete":  settings.AllowMCPDelete,
-		})
+		}
+		if count, err := cfg.Store.CountTowerConnectedColleagues(); err == nil {
+			config["tower_connected_colleagues"] = count
+		} else {
+			log.Printf("count Tower-connected colleagues: %v", err)
+		}
+		writer.Header().Set("Cache-Control", "no-store")
+		writeJSON(writer, http.StatusOK, config)
 	})
 	mux.HandleFunc("GET /api/skill.md", func(writer http.ResponseWriter, req *http.Request) {
 		skillMCPURL := mcpURL

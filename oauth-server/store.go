@@ -536,6 +536,13 @@ type SystemSettings struct {
 	AllowMCPDelete   bool   `json:"allow_mcp_delete"`
 }
 
+func (s *Store) CountTowerConnectedColleagues() (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM users
+		WHERE EXISTS (SELECT 1 FROM accounts WHERE accounts.user_id = users.id)`).Scan(&count)
+	return count, err
+}
+
 func (s *Store) GetSettings() SystemSettings {
 	out := SystemSettings{
 		RegistrationMode: RegModeOpen,

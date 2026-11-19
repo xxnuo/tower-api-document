@@ -675,6 +675,7 @@ export default function App() {
       <AuthScreen
         hasUsers={hasUsers}
         registrationMode={config.registration_mode || "open"}
+        towerConnectedColleagues={config.tower_connected_colleagues}
         onAuthenticated={handleAuthLoaded}
         onToggleTheme={() => setTheme(themeMeta.next)}
         themeLabel={themeMeta.label}

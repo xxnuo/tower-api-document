@@ -89,6 +89,47 @@ func TestHomeRendersFrontendAndDefaultPort(t *testing.T) {
 	}
 }
 
+func TestPublicConfigCountsColleaguesWithTower(t *testing.T) {
+	store, err := OpenStore(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	cfg := testConfig("https://tower.example")
+	cfg.Store = store
+	mux := newMux(cfg)
+	_, first, _ := registerTestUser(t, mux, "first", "password123")
+	_, second, _ := registerTestUser(t, mux, "second", "password123")
+	assertCount := func(want int) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+		var config struct {
+			Count *int `json:"tower_connected_colleagues"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &config); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusOK || config.Count == nil || *config.Count != want {
+			t.Fatalf("want %d connected colleagues, got %d %s", want, rec.Code, rec.Body.String())
+		}
+	}
+	bind := func(userID int64, towerID string) {
+		t.Helper()
+		if _, err := store.SaveLoginForUser(userID, &UserInfo{ID: towerID}, TokenResponse{AccessToken: "token-" + towerID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	bind(0, "legacy")
+	assertCount(0)
+	bind(first.ID, "first-tower")
+	bind(first.ID, "other-tower")
+	assertCount(1)
+	bind(second.ID, "second-tower")
+	assertCount(2)
+}
+
 func TestPublicBaseURLs(t *testing.T) {
 	t.Chdir(t.TempDir())
 	t.Setenv("TOWER_CLIENT_ID", "cid")

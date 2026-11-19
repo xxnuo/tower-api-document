@@ -45,6 +45,7 @@ export function removeQuickLoginEntry(username) {
 export default function AuthScreen({
   hasUsers,
   registrationMode = "open",
+  towerConnectedColleagues,
   onAuthenticated,
   onToggleTheme,
   themeLabel,
@@ -159,6 +160,11 @@ export default function AuthScreen({
         </CardHeader>
 
         <CardContent className="px-6 space-y-5">
+          {Number.isInteger(towerConnectedColleagues) && towerConnectedColleagues > 0 && (
+            <p className="rounded-lg border bg-muted/30 px-3 py-2.5 text-sm leading-relaxed text-muted-foreground">
+              已有 <strong className="font-semibold text-foreground">{towerConnectedColleagues}</strong> 位同事将自己的 Tower 接入了 AI 功能，你也快试试吧！
+            </p>
+          )}
           {savedLogins.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-medium text-muted-foreground">已保存会话 · 快捷进入</div>
