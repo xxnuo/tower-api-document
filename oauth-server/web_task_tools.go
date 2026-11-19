@@ -44,13 +44,14 @@ var gatewayTaskTools = []mcpToolSpec{
 	},
 	{
 		Name: "filter_project_todos", Title: "按项目字段筛选任务",
-		Desc:   "组合公开 API 按项目任务字段筛选，按返回的 next_cursor 继续。custom.<字段 key> 使用字段的展示值。无需网页登录。",
+		Desc:   "在整个项目内筛选，分页只统计匹配的任务。需要最新匹配时传 order=-created_at。按返回的 next_cursor 继续。custom.<字段 key> 使用字段的展示值。无需网页登录。",
 		Method: "POST", PathTemplate: "/api/v1/projects/{project_id}/filter_todos",
 		Params: []mcpParam{
 			pPath("project_id", "项目 GUID"),
-			pBody("conditions", "conditions", true, "1–20 项。field 支持 title、label、priority、todolist_id、assignee_id、creator_id、closer_id、start_at、due_at、closed_at、created_at、custom.<字段 key>。operator 按字段可选 in、not_in、all_in、eq、lt、gt、be_nil、not_be_nil。日期用 YYYY-MM-DD。"),
+			pBody("conditions", "conditions", true, "1–20 项。field 支持 title、label、priority、todolist_id、assignee_id、creator_id、closer_id、start_at、due_at、closed_at、created_at、custom.<字段 key>。operator 按字段可选 in、not_in、all_in、eq、lt、gt、be_nil、not_be_nil。日期用北京时间 YYYY-MM-DD，lt 和 gt 不含当天。"),
 			pBody("match", "string", false, "all（全部满足）或 any（任一满足）"),
 			pBody("status", "string", false, "all、completed 或 uncompleted"),
+			pBody("order", "string", false, "可选 -created_at，按整个项目的创建时间倒序。默认按清单顺序。"),
 			pBody("page_size", "integer", false, "每页最多 50 条"),
 			pBody("cursor", "string", false, "上一页 next_cursor，保留相同查询条件"),
 		},

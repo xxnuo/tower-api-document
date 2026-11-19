@@ -106,3 +106,58 @@ func TestListProjectTodosOpenAndRepeatedPage(t *testing.T) {
 		t.Fatalf("expected reproducible pagination error: %s", out)
 	}
 }
+
+func TestProjectTodoMatchingPagesAndGlobalOrder(t *testing.T) {
+	const projectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const nLists = 20
+	requests := 0
+	tower := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if strings.HasSuffix(r.URL.Path, "/todolists") {
+			var lists []map[string]string
+			for i := 1; i <= nLists; i++ {
+				lists = append(lists, map[string]string{"id": fmt.Sprint(i)})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": lists, "links": map[string]any{"next": nil}})
+			return
+		}
+		var n int
+		fmt.Sscanf(r.URL.Path, "/api/v1/todolists/%d/todos", &n)
+		fmt.Fprintf(w, `{"data":[{"id":"%d","attributes":{"created_at":"2026-11-%02dT09:00:00+08:00"}}],"links":{"next":null}}`, n, n)
+	}))
+	defer tower.Close()
+	cfg, acc := testConfig(tower.URL), &StoredAccount{MCPAPIKey: "account"}
+	for _, sort := range []bool{false, true} {
+		args := map[string]any{"project_id": projectID, "page_size": 4, "conditions": []any{map[string]any{"field": "created_at", "operator": "gt", "value": "2026-11-17"}}}
+		firstID := "18"
+		if sort {
+			args["order"] = "-created_at"
+			firstID = "20"
+		}
+		page, err := filterProjectTodos(t.Context(), cfg, acc, args)
+		if err != nil || page["returned"] != 3 || page["has_more"] != false || page["next_cursor"] != nil || page["items"].([]any)[0].(map[string]any)["id"] != firstID {
+			t.Fatalf("order %t: page = %v, err = %v", sort, page, err)
+		}
+	}
+	args := map[string]any{"project_id": projectID, "order": "-created_at", "page_size": 3}
+	first, err := scanProjectTodos(t.Context(), cfg, "account", acc, args, nil)
+	if err != nil || first["items"].([]any)[0].(map[string]any)["id"] != "20" {
+		t.Fatalf("%v, %v", first, err)
+	}
+	args["cursor"] = first["next_cursor"]
+	before := requests
+	for range 2 {
+		page, err := scanProjectTodos(t.Context(), cfg, "account", acc, args, nil)
+		if err != nil || page["items"].([]any)[0].(map[string]any)["id"] != "17" || requests != before {
+			t.Fatalf("resuming sorted page: %v, %v", page, err)
+		}
+	}
+	delete(args, "order")
+	if _, err := scanProjectTodos(t.Context(), cfg, "account", acc, args, nil); err == nil {
+		t.Fatal("cursor accepted a different order")
+	}
+	args["order"] = "not-supported"
+	if _, err := scanProjectTodos(t.Context(), cfg, "account", acc, args, nil); err == nil {
+		t.Fatal("accepted invalid order")
+	}
+}

@@ -55,6 +55,73 @@ func TestProjectTodoFilterConditions(t *testing.T) {
 	}
 }
 
+func TestProjectTodoFilterCreationDate(t *testing.T) {
+	for _, tc := range []struct {
+		name, op, date string
+		value          any
+		want           bool
+	}{
+		{name: "equal on UTC+8 day", op: "eq", date: "2026-11-19", value: "2026-11-18T16:00:00Z", want: true},
+		{name: "greater than earlier day", op: "gt", date: "2026-11-18", value: "2026-11-18T16:00:00Z", want: true},
+		{name: "greater than same day", op: "gt", date: "2026-11-19", value: "2026-11-18T16:00:00Z"},
+		{name: "less than next day", op: "lt", date: "2026-11-19", value: "2026-11-18T15:59:59.999Z", want: true},
+		{name: "less than same day", op: "lt", date: "2026-11-19", value: "2026-11-19T23:59:59+08:00"},
+		{name: "date-only value", op: "eq", date: "2026-11-19", value: "2026-11-19", want: true},
+		{name: "malformed comparison", op: "lt", date: "2026-11-19", value: "2026-02-30"},
+		{name: "date present", op: "not_be_nil", value: "2026-11-19", want: true},
+		{name: "date malformed", op: "not_be_nil", value: "上游未提供"},
+		{name: "date wrong type", op: "not_be_nil", value: float64(123)},
+		{name: "date absent", op: "not_be_nil"},
+		{name: "empty date", op: "be_nil", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			condition := map[string]any{"field": "created_at", "operator": tc.op}
+			if tc.date != "" {
+				condition["value"] = tc.date
+			}
+			filter, err := newProjectTodoFilter(map[string]any{"conditions": []any{condition}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			match, err := filter.matches(map[string]any{"created_at": tc.value}, nil)
+			if err != nil || match != tc.want {
+				t.Fatalf("match = %v, err = %v, want %v", match, err, tc.want)
+			}
+		})
+	}
+	for _, value := range []any{"2026-02-30", "2026-11-19T00:00:00+08:00", []any{"2026-11-19", "2026-11-20"}} {
+		_, err := newProjectTodoFilter(map[string]any{"conditions": []any{
+			map[string]any{"field": "created_at", "operator": "eq", "value": value},
+		}})
+		if !errors.Is(err, errWebArguments) {
+			t.Errorf("value = %v, err = %v", value, err)
+		}
+	}
+}
+
+func TestProjectTodoFilterReadsMissingCreationDateFromDetail(t *testing.T) {
+	filter, err := newProjectTodoFilter(map[string]any{"conditions": []any{
+		map[string]any{"field": "created_at", "operator": "eq", "value": "2026-11-19"},
+		map[string]any{"field": "due_at", "operator": "eq", "value": "2026-11-19"},
+		map[string]any{"field": "start_at", "operator": "lt", "value": "2026-11-19"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	detail := func() (map[string]any, error) {
+		calls++
+		return map[string]any{"created_at": "2026-11-18T16:00:00Z", "start_at": "2026-11-18"}, nil
+	}
+	if match, err := filter.matches(map[string]any{"due_at": "2026-11-18"}, detail); err != nil || match || calls != 0 {
+		t.Fatalf("match = %v, calls = %d, err = %v", match, calls, err)
+	}
+	item := map[string]any{"due_at": "2026-11-19"}
+	if match, err := filter.matches(item, detail); err != nil || !match || calls != 1 || item["created_at"] != "2026-11-18T16:00:00Z" {
+		t.Fatalf("match = %v, calls = %d, err = %v, item = %v", match, calls, err, item)
+	}
+}
+
 func TestProjectTodoFilterReadsDetailsOnlyForCandidates(t *testing.T) {
 	filter, err := newProjectTodoFilter(map[string]any{"conditions": []any{
 		map[string]any{"field": "custom.select_oeM6vDNt", "operator": "in", "value": "Web"},
@@ -119,8 +186,9 @@ func TestWebSearchTagPagination(t *testing.T) {
 	}
 }
 
-func TestProjectTodoFilterCursorResumesAfterRequestLimit(t *testing.T) {
+func TestProjectTodoFilterPagesCountMatches(t *testing.T) {
 	const projectID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const firstMatch = 15
 	requests := 0
 	tower := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
@@ -131,14 +199,14 @@ func TestProjectTodoFilterCursorResumesAfterRequestLimit(t *testing.T) {
 		case "/api/v1/projects/" + projectID + "/todolists":
 			fmt.Fprint(w, `{"data":[{"id":"l1"}],"links":{"next":null}}`)
 		case "/api/v1/todolists/l1/todos":
-			rows := make([]map[string]any, 0, projectFilterRequestLimit+2)
-			for i := 0; i < projectFilterRequestLimit+2; i++ {
+			rows := make([]map[string]any, 0, firstMatch+2)
+			for i := 0; i < firstMatch+2; i++ {
 				rows = append(rows, map[string]any{"id": fmt.Sprintf("task-%d", i), "attributes": map[string]any{"content": "任务", "is_completed": i == 0, "due_at": nil}})
 			}
 			json.NewEncoder(w).Encode(map[string]any{"data": rows, "links": map[string]any{"next": nil}})
 		default:
 			value := "Native"
-			if r.URL.Path == fmt.Sprintf("/api/v1/todos/task-%d", projectFilterRequestLimit) {
+			if r.URL.Path == fmt.Sprintf("/api/v1/todos/task-%d", firstMatch) || r.URL.Path == fmt.Sprintf("/api/v1/todos/task-%d", firstMatch+1) {
 				value = "Web"
 			}
 			fmt.Fprintf(w, `{"data":{"attributes":{"start_at":"2026-11-19"},"relationships":{"custom_field_value":{"data":{"id":"v1","type":"todos_custom_field_values"}}}},"included":[{"id":"v2","type":"todos_custom_field_values","attributes":{"custom_fields":{"platform":{"value":"unrelated"}}}},{"id":"v1","type":"todos_custom_field_values","attributes":{"custom_fields":{"platform":{"value":%q}}}}]}`, value)
@@ -154,7 +222,7 @@ func TestProjectTodoFilterCursorResumesAfterRequestLimit(t *testing.T) {
 		map[string]any{"field": "due_at", "operator": "be_nil"},
 	}}
 	first, err := filterProjectTodos(t.Context(), cfg, account, args)
-	if err != nil || first["has_more"] != true || first["returned"] != 0 || requests != projectFilterRequestLimit {
+	if err != nil || first["has_more"] != true || first["returned"] != 1 || first["items"].([]any)[0].(map[string]any)["id"] != fmt.Sprintf("task-%d", firstMatch) {
 		t.Fatalf("first = %v, requests = %d, err = %v", first, requests, err)
 	}
 	args["cursor"] = first["next_cursor"]
@@ -172,7 +240,7 @@ func TestProjectTodoFilterCursorResumesAfterRequestLimit(t *testing.T) {
 		t.Fatalf("last = %v, err = %v", last, err)
 	}
 	item := last["items"].([]any)[0].(map[string]any)
-	if item["id"] != fmt.Sprintf("task-%d", projectFilterRequestLimit) || item["todolist_id"] != "l1" {
+	if item["id"] != fmt.Sprintf("task-%d", firstMatch+1) || item["todolist_id"] != "l1" {
 		t.Fatal(item)
 	}
 }

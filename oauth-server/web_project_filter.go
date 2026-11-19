@@ -12,8 +12,6 @@ import (
 	"time"
 )
 
-const projectFilterRequestLimit = 15
-
 func filterProjectTodos(ctx context.Context, cfg Config, acc *StoredAccount, args map[string]any) (map[string]any, error) {
 	if id, ok := args["project_id"].(string); !ok || !guidPattern.MatchString(id) {
 		return nil, fmt.Errorf("%w：project_id 须为 Tower GUID", errWebArguments)
@@ -64,7 +62,7 @@ var projectTodoFilterOperators = map[string]string{
 	"start_at":    "eq lt gt be_nil",
 	"due_at":      "eq lt gt be_nil",
 	"closed_at":   "eq lt gt be_nil",
-	"created_at":  "eq lt gt be_nil",
+	"created_at":  "eq lt gt be_nil not_be_nil",
 }
 
 func newProjectTodoFilter(args map[string]any) (*projectTodoFilter, error) {
@@ -159,12 +157,13 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 		}
 	}
 	all := filter.Match == "all"
+	_, hasCreationDate := item["created_at"]
 	var payload map[string]any
 	// Evaluate list fields before reading a task detail, which may include many related resources.
 	for _, needDetail := range []bool{false, true} {
 		for _, condition := range filter.Conditions {
 			key := condition.Field
-			if (key == "start_at" || strings.HasPrefix(key, "custom.")) != needDetail {
+			if (key == "start_at" || key == "created_at" && !hasCreationDate || strings.HasPrefix(key, "custom.")) != needDetail {
 				continue
 			}
 			value := item[key]
@@ -187,9 +186,13 @@ func (filter *projectTodoFilter) matches(item map[string]any, detail func() (map
 						return false, err
 					}
 				}
-				if key == "start_at" {
+				switch key {
+				case "start_at", "created_at":
 					value = payload[key]
-				} else {
+					if key == "created_at" {
+						item[key] = value
+					}
+				default:
 					custom, _ := payload["custom_fields"].(map[string]any)
 					field, _ := custom[strings.TrimPrefix(key, "custom.")].(map[string]any)
 					value = field["value"]
@@ -209,6 +212,9 @@ func (condition projectTodoCondition) matches(raw any) bool {
 	case "be_nil":
 		return len(values) == 0
 	case "not_be_nil":
+		if condition.Field == "created_at" {
+			return todoDueDay(raw) != ""
+		}
 		return len(values) > 0
 	}
 	if strings.HasSuffix(condition.Field, "_at") {

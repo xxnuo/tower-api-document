@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,11 +18,12 @@ import (
 func projectTodosToolDefinition() map[string]any {
 	return map[string]any{
 		"name":        "list_project_todos",
-		"description": "分页列出指定项目全部清单中的任务，按任务 ID 去重。保留 project_id 和 completed_todo，把上一页的 next_cursor 传给 cursor 继续。",
+		"description": "分页列出指定项目全部清单中的任务，按任务 ID 去重。需要最新任务时传 order=-created_at。翻页时保留项目、完成状态和排序条件。",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"project_id":     map[string]any{"type": "string", "description": "项目 ID"},
+				"order":          map[string]any{"type": "string", "enum": []string{"-created_at"}, "description": "按整个项目的创建时间倒序，省略则按清单顺序"},
 				"completed_todo": map[string]any{"type": "boolean", "default": true, "description": "是否包含已完成的任务，默认 true"},
 				"page_size":      map[string]any{"type": "integer", "minimum": 1, "maximum": maxListPageSize, "description": "每次最多返回的任务数，默认 20"},
 				"cursor":         map[string]any{"type": "string", "description": "上一页返回的 next_cursor"},
@@ -35,13 +35,13 @@ func projectTodosToolDefinition() map[string]any {
 }
 
 type projectTodoScan struct {
-	lists     []string
-	listPage  upstreamProjectPage
-	listIndex int
-	taskPage  upstreamProjectPage
-	rows      []map[string]any
-	pending   map[string]any
-	seen      map[string]bool
+	lists      []string
+	listIndex  int
+	taskPage   upstreamProjectPage
+	rows       []map[string]any
+	pending    map[string]any
+	sortedRows []map[string]any
+	seen       map[string]bool
 }
 
 type upstreamProjectPage struct {
@@ -58,6 +58,7 @@ type savedProjectScan struct {
 	projectID string
 	completed bool
 	filterKey string
+	order     string
 	expires   time.Time
 }
 
@@ -194,6 +195,13 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 	if projectID == "" {
 		return nil, fmt.Errorf("缺少必填参数 project_id")
 	}
+	order := ""
+	if v, ok := args["order"]; ok {
+		if v != "-created_at" {
+			return nil, fmt.Errorf("%w：order 仅支持 -created_at", errWebArguments)
+		}
+		order = "-created_at"
+	}
 	completed := stringifyArg(args["completed_todo"]) != "false"
 	var filterKey string
 	if filter != nil {
@@ -205,18 +213,16 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 	pageSize := clampPageSize(stringifyArg(args["page_size"]))
 	scan := projectTodoScan{
 		seen:     make(map[string]bool),
-		listPage: upstreamProjectPage{number: 1},
 		taskPage: upstreamProjectPage{number: 1, includeFilterFields: filter != nil},
 	}
-	requests := 0
-	canFetch := func() bool { return filter == nil || requests < projectFilterRequestLimit }
 
-	if cursor := stringifyArg(args["cursor"]); cursor != "" {
+	cursor := stringifyArg(args["cursor"])
+	if cursor != "" {
 		projectScanCache.Lock()
 		saved, ok := projectScanCache.entries[cursor]
 		projectScanCache.Unlock()
 		if !ok || !saved.expires.After(time.Now()) || saved.keyHash != keyHash || saved.store != cfg.Store || saved.baseURL != cfg.BaseURL ||
-			saved.projectID != projectID || saved.completed != completed || saved.filterKey != filterKey {
+			saved.projectID != projectID || saved.completed != completed || saved.filterKey != filterKey || saved.order != order {
 			if filter != nil {
 				return nil, fmt.Errorf("%w：cursor 已失效或与本次查询不匹配，请从第一页开始", errWebArguments)
 			}
@@ -225,18 +231,11 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 		scan = saved.scan
 		scan.seen = maps.Clone(scan.seen)
 		scan.taskPage.seen = maps.Clone(scan.taskPage.seen)
-	}
-	if scan.listPage.number > 0 {
-		scan.listPage.seen = maps.Clone(scan.listPage.seen)
-		scan.lists = slices.Clone(scan.lists)
+	} else {
 		path := "/api/v1/projects/" + url.PathEscape(projectID) + "/todolists"
 		seenLists := make(map[string]bool)
-		for _, id := range scan.lists {
-			seenLists[id] = true
-		}
-		for scan.listPage.number > 0 && canFetch() {
-			requests++
-			lists, err := scan.listPage.fetch(ctx, cfg, key, acc, path, false, completed)
+		for pages := (upstreamProjectPage{number: 1}); pages.number > 0; {
+			lists, err := pages.fetch(ctx, cfg, key, acc, path, false, completed)
 			if err != nil {
 				return nil, err
 			}
@@ -255,7 +254,7 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 		items = append(items, scan.pending)
 		scan.pending = nil
 	}
-	for scan.listPage.number == 0 && scan.listIndex < len(scan.lists) {
+	for scan.listIndex < len(scan.lists) {
 		listID := scan.lists[scan.listIndex]
 		if len(scan.rows) == 0 {
 			if scan.taskPage.number == 0 {
@@ -263,20 +262,13 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 				scan.taskPage = upstreamProjectPage{number: 1, includeFilterFields: filter != nil}
 				continue
 			}
-			if !canFetch() {
-				break
-			}
 			path := "/api/v1/todolists/" + url.PathEscape(listID) + "/todos"
-			requests++
 			rows, err := scan.taskPage.fetch(ctx, cfg, key, acc, path, true, completed)
 			if err != nil {
 				return nil, err
 			}
 			scan.rows = rows
 			continue
-		}
-		if !canFetch() {
-			break
 		}
 		row := scan.rows[0]
 		scan.rows = scan.rows[1:]
@@ -288,7 +280,6 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 		item["todolist_id"] = listID
 		if filter != nil {
 			detail := func() (map[string]any, error) {
-				requests++
 				return fetchProjectTodoDetail(ctx, cfg, key, acc, id)
 			}
 			matched, err := filter.matches(item, detail)
@@ -303,16 +294,33 @@ func scanProjectTodos(ctx context.Context, cfg Config, key string, acc *StoredAc
 			item["todolist_id"] = listID
 		}
 		scan.seen[id] = true
+		if order != "" {
+			scan.sortedRows = append(scan.sortedRows, item)
+			continue
+		}
 		if len(items) == pageSize {
 			scan.pending = item
 			break
 		}
 		items = append(items, item)
 	}
-	hasMore := scan.pending != nil || scan.listPage.number > 0 || scan.listIndex < len(scan.lists)
+	if order != "" {
+		if cursor == "" {
+			if err := sortTodosByCreation(scan.sortedRows); err != nil {
+				return nil, err
+			}
+			scan = projectTodoScan{sortedRows: scan.sortedRows}
+		}
+		n := min(pageSize, len(scan.sortedRows))
+		for _, row := range scan.sortedRows[:n] {
+			items = append(items, row)
+		}
+		scan.sortedRows = scan.sortedRows[n:]
+	}
+	hasMore := scan.pending != nil || len(scan.sortedRows) > 0
 	out := map[string]any{"project_id": projectID, "page_size": pageSize, "returned": len(items), "has_more": hasMore, "items": items}
 	if hasMore {
-		out["next_cursor"] = saveProjectScan(savedProjectScan{scan: scan, keyHash: keyHash, baseURL: cfg.BaseURL, store: cfg.Store, projectID: projectID, completed: completed, filterKey: filterKey})
+		out["next_cursor"] = saveProjectScan(savedProjectScan{scan: scan, keyHash: keyHash, baseURL: cfg.BaseURL, store: cfg.Store, projectID: projectID, completed: completed, filterKey: filterKey, order: order})
 	}
 	return out, nil
 }
