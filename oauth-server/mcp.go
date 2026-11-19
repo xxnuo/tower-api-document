@@ -1030,6 +1030,13 @@ func executeMCPTool(
 	}
 	if spec, ok := gatewayTaskSpec(name); ok {
 		result, err := runGatewayTask(ctx, cfg, acc, spec, args)
+		if name == "read_repository_item" && err == nil {
+			if markdown, ok := result["markdown"].(string); ok {
+				delete(result, "markdown")
+				header, _ := webToolText(name, result, nil)
+				return header + "\n\n" + markdown, false
+			}
+		}
 		return webToolText(name, result, err)
 	}
 	if name == "add_todo_project" {

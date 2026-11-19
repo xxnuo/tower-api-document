@@ -91,6 +91,9 @@ export const TOWER_API_CATALOG = [
 
   { id: "project-task-fields", group: "项目", name: "查询可用标签、自定义字段及选项", tags: ["Web"], method: "GET", path: "/api/v1/projects/{project_id}/task_fields" },
   { id: "project-filter-todos", group: "任务", name: "按项目字段组合筛选任务", tags: ["API", "Multi-API"], method: "POST", path: "/api/v1/projects/{project_id}/filter_todos", defaultBody: '{\n  "conditions": [{"field": "title", "operator": "in", "value": "测试"}],\n  "status": "uncompleted"\n}' },
+  { id: "team-repositories", group: "知识库", name: "发现团队知识库", tags: ["Web"], method: "GET", path: "/api/v1/teams/{team_id}/repositories" },
+  { id: "repository-items", group: "知识库", name: "列出知识库目录", tags: ["Web"], method: "GET", path: "/api/v1/teams/{team_id}/repository_items", defaultQuery: "url=" },
+  { id: "repository-item", group: "知识库", name: "读取知识库文档", tags: ["Web"], method: "GET", path: "/api/v1/teams/{team_id}/repository_item", defaultQuery: "url=" },
   { id: "todo-edit-my-comment", group: "任务", name: "编辑自己的任务评论", tags: ["Web"], method: "PATCH", path: "/api/v1/todos/{todo_id}/edit_my_comment", defaultBody: JSON.stringify({ comment_id: "", content: "" }, null, 2) },
   { id: "mark-notification-read", group: "通知", name: "将一条通知标记为已读", tags: ["Web"], method: "POST", path: "/api/v1/teams/{team_id}/mark_notification_read", defaultBody: JSON.stringify({ notification_id: "" }, null, 2) },
   { id: "todo-history", group: "任务", name: "按时间读取任务变更和评论", tags: ["Web"], method: "GET", path: "/api/v1/todos/{todo_id}/history", defaultQuery: "offset=0&page_size=20" },

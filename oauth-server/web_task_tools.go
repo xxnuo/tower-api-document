@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools)
+var gatewayTaskTools = slices.Concat(projectTaskTools, activityTools, gatewayLibraryTools)
 
 var projectTaskTools = []mcpToolSpec{
 	{
@@ -94,7 +94,10 @@ func runGatewayTask(ctx context.Context, cfg Config, acc *StoredAccount, spec mc
 		return nil, err
 	}
 	defer client.save()
-	if spec.Name == "mark_notification_read" {
+	switch spec.Name {
+	case "list_repositories", "list_repository_items", "read_repository_item":
+		return client.library(ctx, spec.Name, stringifyArg(args["team_id"]), stringifyArg(args["url"]))
+	case "mark_notification_read":
 		return client.markNotificationRead(ctx, cfg, acc, stringifyArg(args["team_id"]), stringifyArg(args["notification_id"]))
 	}
 	projectID := stringifyArg(args["project_id"])
