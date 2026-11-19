@@ -186,7 +186,7 @@ export default function App() {
   const webPollRef = useRef(null);
   const syncedIdsRef = useRef(new Set());
 
-  const activeTab = requestedTab === "admin" && authUser?.role !== "admin" ? "creds" : requestedTab;
+  const activeTab = ["admin", "explorer"].includes(requestedTab) && authUser?.role !== "admin" ? "creds" : requestedTab;
   const creds = store.items.find((item) => item.id === store.activeId) || store.items[0] || null;
 
   useEffect(() => {
@@ -774,8 +774,10 @@ export default function App() {
   const navItems = [
     { id: "creds", label: "凭据中心", icon: KeyIcon, badge: store.items.length > 0 ? `${store.items.length}` : null },
     { id: "mcp", label: "MCP 调试", icon: CpuIcon, badge: mcpKey ? "就绪" : null },
-    { id: "explorer", label: "API 调试", icon: TerminalWindowIcon },
-    ...(authUser.role === "admin" ? [{ id: "admin", label: "成员管理", icon: UsersIcon }] : []),
+    ...(authUser.role === "admin" ? [
+      { id: "explorer", label: "API 调试", icon: TerminalWindowIcon },
+      { id: "admin", label: "成员管理", icon: UsersIcon },
+    ] : []),
   ];
 
   const telemetryCells = [
