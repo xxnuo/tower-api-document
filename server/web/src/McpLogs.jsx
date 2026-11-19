@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBanner } from "@/components/shared";
 
-export default function McpLogs({ admin }) {
+export default function McpLogs() {
   const [page, setPage] = useState(null);
   const [cursors, setCursors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +21,7 @@ export default function McpLogs({ admin }) {
       setPage(null);
       try {
         const before = cursors.at(-1);
-        const path = admin ? "/api/admin/mcp-logs" : "/api/mcp-logs";
-        const res = await fetch(path + (before ? `?before=${before}` : ""), { signal: controller.signal });
+        const res = await fetch("/api/mcp-logs" + (before ? `?before=${before}` : ""), { signal: controller.signal });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "读取操作日志失败");
         setPage(data);
@@ -34,7 +33,7 @@ export default function McpLogs({ admin }) {
     }
     load();
     return () => controller.abort();
-  }, [admin, cursors]);
+  }, [cursors]);
 
   async function setRecording(enabled) {
     setSaving(true);
@@ -79,18 +78,16 @@ export default function McpLogs({ admin }) {
         </div>
         {error && <StatusBanner tone="error">{error}</StatusBanner>}
         <section className="space-y-3">
-          <h2 className="text-sm font-semibold">{admin ? "所有用户的操作记录" : "我的操作记录"}</h2>
+          <h2 className="text-sm font-semibold">我的操作记录</h2>
           {loading ? <p className="text-sm text-muted-foreground">加载中…</p> : page && (page.logs.length ? (
             <Table>
               <TableHeader><TableRow>
                 <TableHead>调用时间</TableHead>
-                {admin && <TableHead>用户</TableHead>}
                 <TableHead>Tower 账号</TableHead><TableHead>工具</TableHead><TableHead>结果</TableHead><TableHead>耗时</TableHead>
               </TableRow></TableHeader>
               <TableBody>{page.logs.map(entry => (
                 <TableRow key={entry.id}>
                   <TableCell>{new Date(entry.started_at).toLocaleString()}</TableCell>
-                  {admin && <TableCell>{entry.username}</TableCell>}
                   <TableCell>{entry.tower_account}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.tool}</TableCell>
                   <TableCell><Badge variant={entry.success ? "secondary" : "destructive"}>{entry.success ? "成功" : "失败"}</Badge></TableCell>

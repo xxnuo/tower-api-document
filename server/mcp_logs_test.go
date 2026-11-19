@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestMCPLogConsentAndAuditAccess(t *testing.T) {
+func TestMCPLogConsentAndPersonalAccess(t *testing.T) {
 	tower := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/teams" {
 			http.NotFound(w, r)
@@ -84,7 +84,8 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 	}
 	request("GET", own, "", nil, "", 401)
 	request("PUT", own+"/settings", `{"enabled":true}`, nil, "", 401)
-	request("GET", audit, "", member, "", 403)
+	request("GET", audit, "", member, "", 404)
+	request("GET", audit, "", admin, "", 404)
 	request("PUT", own+"/settings", `{}`, member, "", 400)
 	call(memberAccount, "list_teams", "{}")
 	if p := list(member, own); p.Enabled || len(p.Logs) != 0 {
@@ -97,10 +98,13 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 	call(memberAccount, "secret-unknown-tool", "{}")
 	call(adminAccount, "list_teams", "{}")
 	request("POST", "/mcp", `{"jsonrpc":"2.0","id":2,"method":"ping"}`, nil, memberAccount.MCPAPIKey, 200)
-	p := list(admin, audit)
-	if p.Enabled || len(p.Logs) != 3 || p.Logs[0].Success || p.Logs[1].Success || !p.Logs[2].Success ||
+	if p := list(admin, own+"?all=true&user_id=2"); len(p.Logs) != 0 {
+		t.Fatal("admin can see member logs")
+	}
+	p := list(member, own)
+	if !p.Enabled || len(p.Logs) != 3 || p.Logs[0].Success || p.Logs[1].Success || !p.Logs[2].Success ||
 		p.Logs[2].Tool != "list_teams" || p.Logs[2].Username != memberUser.Username || p.Logs[2].TowerAccount != memberAccount.TowerID {
-		t.Fatalf("unexpected audit results: %+v", p)
+		t.Fatalf("unexpected member results: %+v", p)
 	}
 	set(admin, true)
 	call(adminAccount, "list_teams", "{}")
@@ -114,7 +118,7 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 		SELECT user_id, username, tower_account, tool, 1, duration_ms, success FROM mcp_operation_logs`); err != nil {
 		t.Fatal(err)
 	}
-	if len(list(member, own).Logs) != 3 || len(list(admin, audit).Logs) != 4 {
+	if len(list(member, own).Logs) != 3 || len(list(admin, own).Logs) != 1 {
 		t.Fatal("expired logs are visible")
 	}
 	if err := store.Close(); err != nil {
@@ -130,19 +134,19 @@ func TestMCPLogConsentAndAuditAccess(t *testing.T) {
 	if err := store.db.QueryRow("SELECT count(*) FROM mcp_operation_logs").Scan(&stored); err != nil || stored != 4 {
 		t.Fatalf("startup cleanup: stored=%d err=%v", stored, err)
 	}
-	if p := list(admin, audit); !p.Enabled || len(p.Logs) != 4 || p.Logs[0].Username != adminUser.Username {
-		t.Fatalf("audit after restart: %+v", p)
+	if p := list(admin, own); !p.Enabled || len(p.Logs) != 1 || p.Logs[0].Username != adminUser.Username {
+		t.Fatalf("admin history after restart: %+v", p)
 	}
 	for i := 0; i < mcpLogPageSize; i++ {
 		call(adminAccount, "raw_request", `{"method":"GET","path":"secret-input"}`)
 	}
-	first := list(admin, audit)
+	first := list(admin, own)
 	if !first.HasMore || len(first.Logs) != mcpLogPageSize {
 		t.Fatalf("unexpected first page length %d", len(first.Logs))
 	}
 	cursor := first.Logs[len(first.Logs)-1].ID
-	last := list(admin, fmt.Sprintf("%s?before=%d", audit, cursor))
-	if last.HasMore || len(last.Logs) != 4 || last.Logs[0].ID >= cursor {
+	last := list(admin, fmt.Sprintf("%s?before=%d", own, cursor))
+	if last.HasMore || len(last.Logs) != 1 || last.Logs[0].ID >= cursor {
 		t.Fatalf("unexpected last page: %+v", last)
 	}
 	request("GET", own+"?before=invalid", "", member, "", 400)

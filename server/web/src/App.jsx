@@ -1018,7 +1018,7 @@ ${mcpConfigSnippet}
         {activeTab === "admin" && authUser.role === "admin" ? (
           <AdminPanel currentUser={authUser} />
         ) : activeTab === "logs" ? (
-          <McpLogs key={authUser.id + authUser.role} admin={authUser.role === "admin"} />
+          <McpLogs key={authUser.id} />
         ) : activeTab === "mcp" ? (
           <McpExplorer
             mcpKey={mcpKey}

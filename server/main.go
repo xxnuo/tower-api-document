@@ -287,8 +287,8 @@ func newMux(cfg Config) http.Handler {
 	mux.HandleFunc("POST /api/auth/password", requireAuth(cfg, handleChangePassword(cfg)))
 	mux.HandleFunc("POST /api/auth/logout-all", requireAuth(cfg, handleLogoutAll(cfg)))
 	mux.HandleFunc("PUT /api/mcp-logs/settings", requireAuth(cfg, handleMCPLogSetting(cfg)))
-	mux.HandleFunc("GET /api/mcp-logs", requireAuth(cfg, handleMCPLogs(cfg, false)))
-	mux.HandleFunc("GET /api/admin/mcp-logs", requireAdmin(cfg, handleMCPLogs(cfg, true)))
+	mux.HandleFunc("GET /api/mcp-logs", requireAuth(cfg, handleMCPLogs(cfg)))
+	mux.HandleFunc("GET /api/admin/mcp-logs", http.NotFound)
 
 	mux.HandleFunc("GET /api/auth/result", requireAuth(cfg, handlePendingResult(cfg)))
 	mux.HandleFunc("GET /api/accounts", requireAuth(cfg, func(writer http.ResponseWriter, req *http.Request) {

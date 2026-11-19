@@ -85,7 +85,7 @@ func handleMCPLogSetting(cfg Config) http.HandlerFunc {
 
 const mcpLogPageSize = 50
 
-func handleMCPLogs(cfg Config, allUsers bool) http.HandlerFunc {
+func handleMCPLogs(cfg Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		userID := userFromContext(r.Context()).ID
@@ -94,12 +94,8 @@ func handleMCPLogs(cfg Config, allUsers bool) http.HandlerFunc {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "读取日志设置失败"})
 			return
 		}
-		query := "SELECT id, username, tower_account, tool, started_at, duration_ms, success FROM mcp_operation_logs WHERE " + mcpLogExpirySQL + " > ?"
-		args := []any{time.Now().UnixMilli()}
-		if !allUsers {
-			query += " AND user_id = ?"
-			args = append(args, userID)
-		}
+		query := "SELECT id, username, tower_account, tool, started_at, duration_ms, success FROM mcp_operation_logs WHERE user_id = ? AND " + mcpLogExpirySQL + " > ?"
+		args := []any{userID, time.Now().UnixMilli()}
 		if raw := r.URL.Query().Get("before"); raw != "" {
 			before, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil || before <= 0 {
