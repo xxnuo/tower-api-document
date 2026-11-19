@@ -27,6 +27,7 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -122,20 +123,6 @@ function maskToken(str) {
   return `${str.slice(0, 6)}${"*".repeat(str.length - 10)}${str.slice(-4)}`;
 }
 
-function extractCode(raw) {
-  const trimmed = raw.trim().replace(/^["']|["']$/g, "");
-  if (!trimmed) return "";
-  try {
-    const url = new URL(trimmed);
-    const code = url.searchParams.get("code");
-    if (code) return code.trim();
-  } catch {
-    const match = trimmed.match(/(?:^|[?&])code=([^&\s]+)/);
-    if (match?.[1]) return decodeURIComponent(match[1]);
-  }
-  return trimmed;
-}
-
 function maskSecretsInText(text, secrets) {
   let out = text;
   for (const secret of secrets) {
@@ -163,8 +150,6 @@ export default function App() {
   const [hasUsers, setHasUsers] = useState(true);
   const [authUser, setAuthUser] = useState(null);
   const [store, setStore] = useState({ activeId: null, items: [] });
-  const [codeInput, setCodeInput] = useState("");
-  const [awaitingCode, setAwaitingCode] = useState(false);
   const [otpCode, setOtpCode] = useState("");
   const [captcha, setCaptcha] = useState("");
   const [error, setError] = useState("");
@@ -179,6 +164,8 @@ export default function App() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [skillCopied, setSkillCopied] = useState(false);
+  const [loginTarget, setLoginTarget] = useState(null);
+  const [grant, setGrant] = useState(null);
   const [webEmail, setWebEmail] = useState("");
   const [webPassword, setWebPassword] = useState("");
   const [webMessage, setWebMessage] = useState("");
@@ -218,7 +205,7 @@ export default function App() {
     setWebQR("");
     setWebMessage("");
     return () => webPollRef.current?.abort();
-  }, [creds?.id, activeTab]);
+  }, [creds?.id, activeTab, authUser?.id]);
 
   function handleAuthLoaded(data) {
     setAuthUser(data.user);
@@ -425,10 +412,8 @@ export default function App() {
         return;
       }
       saveCreds(data);
-      setAwaitingCode(false);
       setOtpCode("");
       setCaptcha("");
-      setCodeInput("");
       setStatus("凭据获取成功");
     } catch (err) {
       setError(err.message);
@@ -437,17 +422,19 @@ export default function App() {
     }
   }
 
+  function openTowerLogin(accountId) {
+    stopWebPoll();
+    setGrant(null);
+    setCaptcha("");
+    setWebEmail(accountId ? user?.email || token?.email || "" : "");
+    setWebPassword("");
+    setWebMessage("");
+    setWebQR("");
+    setLoginTarget(accountId);
+  }
+
   function handleStartLogin() {
-    setError("");
-    setStatus("");
-    setOtpCode("");
-    setConfirmAction("");
-    if (config.is_oob) {
-      window.open("/login", "_blank", "noopener,noreferrer");
-      setAwaitingCode(true);
-      return;
-    }
-    window.location.href = "/login";
+    openTowerLogin("");
   }
 
   async function handleRefresh() {
@@ -517,7 +504,6 @@ export default function App() {
         }).catch(() => {});
       }
     }
-    setAwaitingCode(false);
     setConfirmAction("");
     setStatus("");
     setError("");
@@ -579,20 +565,53 @@ export default function App() {
     webPollRef.current = null;
   }
 
-  async function reloadAccounts() {
+  async function reloadAccounts(accountId) {
     const res = await fetch("/api/accounts");
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
     const next = buildStoreFromServerAccounts(data.accounts);
     setStore((prev) => ({
-      activeId: next.items.some((item) => item.id === prev.activeId) ? prev.activeId : next.activeId,
+      activeId: accountId || (next.items.some((item) => item.id === prev.activeId) ? prev.activeId : next.activeId),
       items: next.items,
     }));
   }
 
+  async function acceptWebResult(result) {
+    setWebQR("");
+    setWebPassword("");
+    setWebMessage("");
+    if (result.challenge) {
+      setGrant(result);
+      setCaptcha("");
+      return;
+    }
+    if (result.status !== "connected") throw new Error("未确认账号绑定");
+    await reloadAccounts(result.account_id);
+    setLoginTarget(null);
+    setStatus("Tower 账号已连接");
+  }
+
+  async function continueGrant(event) {
+    event.preventDefault();
+    setLoading(true);
+    try {
+      const res = await fetch("/api/accounts/web/continue", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge: grant.challenge, approve: grant.status === "consent", captcha }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await acceptWebResult(data);
+    } catch (err) {
+      setGrant(null);
+      setWebMessage(err.message);
+    } finally { setLoading(false); }
+  }
+
   async function handleWebEmailLogin(event) {
     event.preventDefault();
-    if (!creds?.id) return;
+    stopWebPoll();
+    setWebQR("");
     setLoading(true);
     setError("");
     setWebMessage("");
@@ -601,8 +620,8 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account_id: creds.account_id || creds.id,
-          email: webEmail || user?.email || token?.email || "",
+          account_id: loginTarget,
+          email: webEmail,
           password: webPassword,
         }),
       });
@@ -611,17 +630,15 @@ export default function App() {
       setWebPassword("");
       setWebQR("");
       stopWebPoll();
-      await reloadAccounts();
-      setWebMessage(`网页已连接：${data.web_email}`);
+      await acceptWebResult(data);
     } catch (err) {
-      setError(`网页登录失败: ${err.message}`);
+      setWebMessage(`网页登录失败: ${err.message}`);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleWebWechat() {
-    if (!creds?.id) return;
     stopWebPoll();
     const controller = new AbortController();
     webPollRef.current = controller;
@@ -634,7 +651,7 @@ export default function App() {
       const res = await fetch("/api/accounts/web/wechat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: creds.account_id || creds.id }),
+        body: JSON.stringify({ account_id: loginTarget }),
         signal,
       });
       const data = await res.json();
@@ -648,10 +665,8 @@ export default function App() {
         const result = await response.json();
         if (signal.aborted) return;
         if (!response.ok || result.error) throw new Error(result.error || `HTTP ${response.status}`);
-        if (result.status === "connected") {
-          setWebQR("");
-          await reloadAccounts();
-          if (!signal.aborted) setWebMessage("网页已连接");
+        if (result.status === "connected" || result.challenge) {
+          await acceptWebResult(result);
           return;
         }
         if (result.status === "cancelled") throw new Error("已在微信中取消登录");
@@ -798,8 +813,8 @@ export default function App() {
     },
     {
       label: "授权模式",
-      value: config.is_oob ? "OOB 授权码" : "自动回调",
-      sub: config.is_oob ? "手动粘贴授权码 code" : "回调自动回跳本页",
+      value: "网页登录 + OAuth",
+      sub: "由网关完成授权码交换",
     },
   ];
 
@@ -1185,56 +1200,6 @@ export default function App() {
                           </Button>
                         </div>
                       </form>
-                    ) : awaitingCode ? (
-                      <form
-                        className="space-y-3 rounded-lg border bg-muted/40 p-4"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          exchangeCode("/oauth2/code", { code: extractCode(codeInput) });
-                        }}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                          <span className="font-medium">
-                            在新打开的 Tower 页面完成登录并同意授权后，复制页面显示的授权码（code）：
-                          </span>
-                          <a
-                            href="/login"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-medium underline underline-offset-2 hover:text-foreground text-muted-foreground"
-                          >
-                            重新打开授权页
-                          </a>
-                        </div>
-                        <p className="text-xs leading-relaxed text-muted-foreground">
-                          将 Tower 页面中的授权码粘贴到下方，点击「获取凭据」换取 Token（如自动登录了旧账号，请先在 tower.im 退出或使用无痕窗口）。
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Input
-                            type="text"
-                            value={codeInput}
-                            onChange={(event) => setCodeInput(event.target.value)}
-                            placeholder="粘贴授权码 code"
-                            required
-                            autoFocus
-                            className="min-w-60 flex-1 font-mono text-xs"
-                          />
-                          <Button type="submit" size="sm" disabled={loading}>
-                            {loading ? "获取中..." : "获取凭据"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setAwaitingCode(false);
-                              setCodeInput("");
-                            }}
-                          >
-                            取消
-                          </Button>
-                        </div>
-                      </form>
                     ) : null}
 
                     {token?.access_token ? (
@@ -1336,41 +1301,11 @@ export default function App() {
 
                         {status && <StatusBanner tone="success">{status}</StatusBanner>}
 
-                        <div className="rounded-lg border p-3.5 space-y-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <div className="text-sm font-semibold">Tower 网页登录</div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {creds.web_connected
-                                  ? `已连接${creds.web_email ? ` · ${creds.web_email}` : ""}，供网页搜索和所属项目使用`
-                                  : "搜索和添加所属项目需要网页会话"}
-                              </div>
-                            </div>
-                            <Button type="button" variant="outline" size="sm" disabled={loading} onClick={handleWebWechat}>
-                              微信扫码
-                            </Button>
-                          </div>
-                          <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={handleWebEmailLogin}>
-                            <Input
-                              type="email"
-                              value={webEmail}
-                              placeholder={user?.email || token?.email || "登录邮箱"}
-                              autoComplete="username"
-                              onChange={(event) => setWebEmail(event.target.value)}
-                            />
-                            <Input
-                              type="password"
-                              value={webPassword}
-                              placeholder="密码"
-                              autoComplete="current-password"
-                              onChange={(event) => setWebPassword(event.target.value)}
-                            />
-                            <Button type="submit" size="sm" disabled={loading || !webPassword}>
-                              邮箱登录
-                            </Button>
-                          </form>
-                          {webMessage && <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>}
-                          {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span>{creds.web_connected ? "Tower 网页已连接" : "此账号尚未连接 Tower 网页"}</span>
+                          <Button type="button" size="sm" variant="outline" onClick={() => openTowerLogin(creds.id)}>
+                            {creds.web_connected ? "重新连接网页" : "连接网页"}
+                          </Button>
                         </div>
 
                         <Card size="sm" className="shadow-none">
@@ -1520,11 +1455,10 @@ export default function App() {
                         )}
                       </div>
                     ) : (
-                      !awaitingCode &&
                       !otpCode && (
                         <div className="rounded-lg border border-dashed p-8 text-center space-y-3.5">
                           <p className="mx-auto max-w-md text-xs leading-relaxed text-muted-foreground">
-                            点击下方按钮会打开 Tower OAuth 授权页；完成登录并授权后，即可在本页管理凭据、获取{" "}
+                            使用邮箱或微信登录 Tower 后，即可在本页管理凭据、获取{" "}
                             <code className="font-mono text-foreground">at_sk-...</code> 密钥并接入 AI Agent。
                           </p>
                           <Button type="button" onClick={handleStartLogin}>
@@ -1632,6 +1566,42 @@ export default function App() {
           else handleClearAll();
         }}
       />
+
+      <Dialog open={loginTarget !== null} onOpenChange={(open) => {
+        if (!open && !loading) {
+          stopWebPoll();
+          setLoginTarget(null);
+          setWebPassword("");
+          setGrant(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{loginTarget ? "连接 Tower 网页" : "添加 Tower 账号"}</DialogTitle>
+            <DialogDescription>{loginTarget ? "使用对应的 Tower 账号登录。" : "使用微信或邮箱登录，同时连接 Tower 网页和 API。"}</DialogDescription>
+          </DialogHeader>
+          {grant ? (
+            <form className="space-y-3" onSubmit={continueGrant}>
+              <p className="text-sm">{grant.message}</p>
+              {grant.status === "otp" && <Input required autoComplete="one-time-code" aria-label="验证码" value={captcha} onChange={e => setCaptcha(e.target.value)} />}
+              <Button type="submit" disabled={loading}>{grant.status === "otp" ? "提交验证码" : "同意授权"}</Button>
+            </form>
+          ) : (
+            <>
+              <form className="space-y-3" onSubmit={handleWebEmailLogin}>
+                <Input type="email" required autoComplete="username" aria-label="Tower 邮箱" placeholder="Tower 邮箱" value={webEmail} onChange={e => setWebEmail(e.target.value)} />
+                <Input type="password" required autoComplete="current-password" aria-label="Tower 密码" placeholder="密码" value={webPassword} onChange={e => setWebPassword(e.target.value)} />
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={loading}>邮箱登录</Button>
+                  <Button type="button" variant="outline" disabled={loading} onClick={handleWebWechat}>微信扫码</Button>
+                </div>
+              </form>
+              {webQR && <img src={webQR} alt="微信登录二维码" className="size-40 rounded-md border bg-white" />}
+            </>
+          )}
+          {webMessage && <div role="status" className="text-xs text-muted-foreground">{webMessage}</div>}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showPasswordModal} onOpenChange={setShowPasswordModal}>
         <DialogContent className="sm:max-w-md">

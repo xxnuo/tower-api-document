@@ -258,6 +258,7 @@ func newMux(cfg Config) http.Handler {
 		writeJSON(writer, http.StatusOK, map[string]any{"accounts": userLoginResults(cfg, u.ID)})
 	}))
 	mux.HandleFunc("POST /api/accounts/sync", requireAuth(cfg, handleSyncAccount(cfg)))
+	mux.HandleFunc("POST /api/accounts/web/continue", requireAuth(cfg, handleGrantContinue(cfg)))
 	mux.HandleFunc("POST /api/accounts/web/email", requireAuth(cfg, handleWebEmailLogin(cfg)))
 	mux.HandleFunc("POST /api/accounts/web/wechat", requireAuth(cfg, handleWebWechatStart(cfg)))
 	mux.HandleFunc("GET /api/accounts/web/wechat/{id}", requireAuth(cfg, handleWebWechatPoll(cfg)))

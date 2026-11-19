@@ -747,6 +747,19 @@ func (s *Store) SaveLogin(user *UserInfo, token TokenResponse) (*StoredAccount, 
 }
 
 func (s *Store) SaveLoginForUser(userID int64, user *UserInfo, token TokenResponse) (*StoredAccount, error) {
+	return s.saveLogin(userID, user, token, nil)
+}
+
+// Both credentials become visible together, including when refreshing an existing binding.
+func (s *Store) saveLogin(userID int64, user *UserInfo, token TokenResponse, web *webSessionRecord) (*StoredAccount, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	get := func(id string) (*StoredAccount, error) {
+		return scanAccount(tx.QueryRow("SELECT "+selectAccountCols+" FROM accounts WHERE id = ?", id))
+	}
 	now := time.Now().Unix()
 	towerID := resolveAccountID(user, token)
 	id := towerID
@@ -774,12 +787,12 @@ func (s *Store) SaveLoginForUser(userID int64, user *UserInfo, token TokenRespon
 		}
 	}
 
-	existing, err := s.GetByID(id)
+	existing, err := get(id)
 	if err != nil && !errors.Is(err, ErrAccountNotFound) {
 		return nil, err
 	}
 	if existing == nil && userID > 0 {
-		if legacy, lErr := s.GetByID(towerID); lErr == nil && (legacy.UserID == 0 || legacy.UserID == userID) {
+		if legacy, lErr := get(towerID); lErr == nil && (legacy.UserID == 0 || legacy.UserID == userID) {
 			existing = legacy
 			id = legacy.ID
 		}
@@ -798,7 +811,7 @@ func (s *Store) SaveLoginForUser(userID int64, user *UserInfo, token TokenRespon
 		if avatar == "" {
 			avatar = existing.Avatar
 		}
-		_, err = s.db.Exec(
+		_, err = tx.Exec(
 			`UPDATE accounts
 			 SET user_id = ?, tower_id = ?, nickname = ?, email = ?, avatar = ?, access_token = ?, refresh_token = ?,
 			     token_type = ?, expires_in = ?, token_created_at = ?, updated_at = ?
@@ -809,23 +822,32 @@ func (s *Store) SaveLoginForUser(userID int64, user *UserInfo, token TokenRespon
 		if err != nil {
 			return nil, err
 		}
-		return s.GetByID(id)
-	}
+	} else {
 
-	mcpKey, err := generateMCPKey()
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.db.Exec(
-		`INSERT INTO accounts (id, user_id, tower_id, nickname, email, avatar, access_token, refresh_token, token_type, expires_in, token_created_at, mcp_api_key, created_at, updated_at)
+		mcpKey, err := generateMCPKey()
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(
+			`INSERT INTO accounts (id, user_id, tower_id, nickname, email, avatar, access_token, refresh_token, token_type, expires_in, token_created_at, mcp_api_key, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, userID, towerID, nickname, email, avatar, token.AccessToken, strings.TrimSpace(token.RefreshToken),
-		tokenType, token.ExpiresIn, createdAt, mcpKey, now, now,
-	)
+			id, userID, towerID, nickname, email, avatar, token.AccessToken, strings.TrimSpace(token.RefreshToken),
+			tokenType, token.ExpiresIn, createdAt, mcpKey, now, now,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if web != nil {
+		if err := saveWebSession(tx, id, web.Cookies, web.Email, web.MemberGUID); err != nil {
+			return nil, err
+		}
+	}
+	acc, err := get(id)
 	if err != nil {
 		return nil, err
 	}
-	return s.GetByID(id)
+	return acc, tx.Commit()
 }
 
 func (s *Store) UpdateTokens(id string, token TokenResponse) (*StoredAccount, error) {
@@ -939,12 +961,18 @@ func (s *Store) EnsureFreshToken(cfg Config, mcpKey string, force bool) (*Stored
 }
 
 func (s *Store) SaveWebSession(accountID string, cookies []webCookie, email, memberGUID string) error {
+	return saveWebSession(s.db, accountID, cookies, email, memberGUID)
+}
+
+func saveWebSession(db interface {
+	Exec(string, ...any) (sql.Result, error)
+}, accountID string, cookies []webCookie, email, memberGUID string) error {
 	raw, err := json.Marshal(cookies)
 	if err != nil {
 		return err
 	}
 	now := time.Now().Unix()
-	_, err = s.db.Exec(
+	_, err = db.Exec(
 		`INSERT INTO web_sessions (account_id, cookies, email, member_guid, updated_at)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(account_id) DO UPDATE SET cookies = excluded.cookies, email = excluded.email,

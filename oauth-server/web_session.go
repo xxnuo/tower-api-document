@@ -46,9 +46,9 @@ var (
 	wxAppPattern       = regexp.MustCompile(`appid:\s*'([^']+)'`)
 	wxStatePattern     = regexp.MustCompile(`state:\s*'([^']*)'`)
 	wxRedirectPattern  = regexp.MustCompile(`redirect_uri:\s*encodeURIComponent\('([^']+)'\)`)
-	wxUUIDPattern      = regexp.MustCompile(`uuid\s*[:=]\s*['"]([^'"]+)['"]`)
-	wxImagePattern     = regexp.MustCompile(`src="([^"]*qrcode[^"]*)"`)
-	wxCodePattern      = regexp.MustCompile(`wx_errcode=(\d+);window\.wx_code='([^']*)'`)
+	wxImageIDPattern   = regexp.MustCompile(`src="/connect/qrcode/([A-Za-z0-9_-]+)"`)
+	wxStatusPattern    = regexp.MustCompile(`\bwx_errcode\s*=\s*(\d+)`)
+	wxCodePattern      = regexp.MustCompile(`\bwx_code\s*=\s*['"]([^'"]+)['"]`)
 )
 
 type webCookie struct {
@@ -70,6 +70,7 @@ type webSessionRecord struct {
 type memoryJar struct {
 	jar   *cookiejar.Jar
 	mu    sync.Mutex
+	host  string
 	saved map[string]*http.Cookie
 }
 
@@ -83,6 +84,9 @@ func newMemoryJar() (*memoryJar, error) {
 
 func (jar *memoryJar) SetCookies(rawURL *url.URL, cookies []*http.Cookie) {
 	jar.jar.SetCookies(rawURL, cookies)
+	if !strings.EqualFold(rawURL.Hostname(), jar.host) {
+		return
+	}
 	jar.mu.Lock()
 	defer jar.mu.Unlock()
 	for _, cookie := range cookies {
@@ -144,16 +148,17 @@ func newWebClient(base string, cookies []webCookie) (*webClient, error) {
 		jar:  jar,
 		http: &http.Client{Timeout: 30 * time.Second, Jar: jar},
 	}
-	if len(cookies) == 0 {
-		return client, nil
-	}
 	parsed, err := url.Parse(client.base + "/")
 	if err != nil {
 		return nil, err
 	}
+	jar.host = parsed.Hostname()
+	if len(cookies) == 0 {
+		return client, nil
+	}
 	restored := make([]*http.Cookie, 0, len(cookies))
 	for _, item := range cookies {
-		if item.Name == "" {
+		if item.Name == "" || (item.Domain != "" && !strings.EqualFold(strings.TrimPrefix(item.Domain, "."), parsed.Hostname())) {
 			continue
 		}
 		cookie := &http.Cookie{
@@ -705,10 +710,12 @@ type wechatPending struct {
 	accountID string
 	client    *webClient
 	uuid      string
+	last      string
 	redirect  string
 	state     string
 	expires   time.Time
-	done      bool
+	result    map[string]any
+	finishErr error
 }
 
 var wechatPendingLogins sync.Map
@@ -725,10 +732,11 @@ func handleWebEmailLogin(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
 			return
 		}
-		acc, err := webAccountForUser(cfg, user.ID, payload.AccountID)
-		if err != nil {
-			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "找不到这个 Tower 账号"})
-			return
+		if payload.AccountID != "" {
+			if _, err := webAccountForUser(cfg, user.ID, payload.AccountID); err != nil {
+				writeJSON(writer, 404, map[string]any{"error": "找不到这个 Tower 账号"})
+				return
+			}
 		}
 		client, err := newWebClient(cfg.BaseURL, nil)
 		if err != nil {
@@ -740,15 +748,9 @@ func handleWebEmailLogin(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": err.Error()})
 			return
 		}
-		if acc.Email != "" && !strings.EqualFold(acc.Email, webEmail) {
-			writeJSON(writer, http.StatusConflict, map[string]any{"error": "网页登录邮箱与该 Tower 账号不一致"})
-			return
-		}
-		if err := cfg.Store.SaveWebSession(acc.ID, client.jar.export(), webEmail, ""); err != nil {
-			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-			return
-		}
-		writeJSON(writer, http.StatusOK, map[string]any{"web_connected": true, "web_email": webEmail})
+		client.email = webEmail
+		result, err := finishWebLogin(req.Context(), cfg, user.ID, payload.AccountID, client)
+		writeGrant(writer, result, err)
 	}
 }
 
@@ -762,10 +764,11 @@ func handleWebWechatStart(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效 JSON 请求体"})
 			return
 		}
-		acc, err := webAccountForUser(cfg, user.ID, payload.AccountID)
-		if err != nil {
-			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "找不到这个 Tower 账号"})
-			return
+		if payload.AccountID != "" {
+			if _, err := webAccountForUser(cfg, user.ID, payload.AccountID); err != nil {
+				writeJSON(writer, 404, map[string]any{"error": "找不到这个 Tower 账号"})
+				return
+			}
 		}
 		client, err := newWebClient(cfg.BaseURL, nil)
 		if err != nil {
@@ -793,16 +796,12 @@ func handleWebWechatStart(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": err.Error()})
 			return
 		}
-		uuid := firstMatch(wxUUIDPattern, qrPage)
-		imagePath := html.UnescapeString(firstMatch(wxImagePattern, qrPage))
-		if uuid == "" || imagePath == "" {
-			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "没有拿到微信二维码"})
+		uuid := firstMatch(wxImageIDPattern, qrPage)
+		if uuid == "" {
+			writeJSON(writer, 502, map[string]any{"error": "没有拿到微信二维码"})
 			return
 		}
-		if strings.HasPrefix(imagePath, "/") {
-			imagePath = "https://open.weixin.qq.com" + imagePath
-		}
-		status, image, err := client.request(req.Context(), http.MethodGet, imagePath, "", "")
+		status, image, err := client.request(req.Context(), http.MethodGet, "https://open.weixin.qq.com/connect/qrcode/"+uuid, "", "")
 		if err != nil || status >= 400 || image == "" {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "下载微信二维码失败"})
 			return
@@ -814,9 +813,10 @@ func handleWebWechatStart(cfg Config) http.HandlerFunc {
 		}
 		id = strings.TrimPrefix(id, "at_sk-")
 		wechatPendingLogins.Store(id, &wechatPending{
-			userID: user.ID, accountID: acc.ID, client: client, uuid: uuid,
+			userID: user.ID, accountID: payload.AccountID, client: client, uuid: uuid,
 			redirect: redirect, state: state, expires: time.Now().Add(3 * time.Minute),
 		})
+		time.AfterFunc(3*time.Minute, func() { wechatPendingLogins.Delete(id) })
 		writeJSON(writer, http.StatusOK, map[string]any{
 			"id":    id,
 			"image": "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte(image)),
@@ -839,8 +839,8 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "扫码登录已失效"})
 			return
 		}
-		if pending.done {
-			writeJSON(writer, http.StatusOK, map[string]any{"status": "connected"})
+		if pending.result != nil || pending.finishErr != nil {
+			writeGrant(writer, pending.result, pending.finishErr)
 			return
 		}
 		if time.Now().After(pending.expires) {
@@ -848,20 +848,25 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "expired"})
 			return
 		}
-		status, text, err := pending.client.request(req.Context(), http.MethodGet, "https://lp.open.weixin.qq.com/connect/l/qrconnect?uuid="+url.QueryEscape(pending.uuid), "", "")
+		query := url.Values{"uuid": {pending.uuid}, "_": {fmt.Sprint(time.Now().UnixMilli())}}
+		if pending.last != "" {
+			query.Set("last", pending.last)
+		}
+		status, text, err := pending.client.request(req.Context(), http.MethodGet, "https://lp.open.weixin.qq.com/connect/l/qrconnect?"+query.Encode(), "", "")
 		if err != nil {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": err.Error()})
 			return
 		}
-		codeMatch := wxCodePattern.FindStringSubmatch(text)
-		if status != http.StatusOK || codeMatch == nil {
+		statusCode := firstMatch(wxStatusPattern, text)
+		if status != http.StatusOK || statusCode == "" {
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "微信未返回有效的扫码状态，请重新获取二维码"})
 			return
 		}
-		switch codeMatch[1] {
+		switch statusCode {
 		case "408":
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "pending"})
 		case "404":
+			pending.last = "404"
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "scanned"})
 		case "403":
 			wechatPendingLogins.Delete(req.PathValue("id"))
@@ -870,20 +875,21 @@ func handleWebWechatPoll(cfg Config) http.HandlerFunc {
 			wechatPendingLogins.Delete(req.PathValue("id"))
 			writeJSON(writer, http.StatusOK, map[string]any{"status": "expired"})
 		case "405":
-			if err := finishWechat(req.Context(), cfg, pending, codeMatch[2]); err != nil {
-				writeJSON(writer, http.StatusConflict, map[string]any{"error": err.Error()})
-				return
+			pending.finishErr = finishWechat(req.Context(), pending, firstMatch(wxCodePattern, text))
+			if pending.finishErr == nil {
+				pending.result, pending.finishErr = finishWebLogin(req.Context(), cfg, user.ID, pending.accountID, pending.client)
 			}
-			pending.done = true
-			wechatPendingLogins.Delete(req.PathValue("id"))
-			writeJSON(writer, http.StatusOK, map[string]any{"status": "connected", "web_email": pending.client.email})
+			writeGrant(writer, pending.result, pending.finishErr)
 		default:
 			writeJSON(writer, http.StatusBadGateway, map[string]any{"error": "微信返回了未知的扫码状态，请重新获取二维码"})
 		}
 	}
 }
 
-func finishWechat(ctx context.Context, cfg Config, pending *wechatPending, code string) error {
+func finishWechat(ctx context.Context, pending *wechatPending, code string) error {
+	if code == "" {
+		return errors.New("微信未返回确认码")
+	}
 	callback, err := url.Parse(pending.redirect)
 	if err != nil {
 		return err
@@ -907,15 +913,23 @@ func finishWechat(ctx context.Context, cfg Config, pending *wechatPending, code 
 	if webEmail == "" {
 		return errors.New("扫码后没有读到网页账号邮箱")
 	}
-	acc, err := cfg.Store.GetByID(pending.accountID)
-	if err != nil {
-		return err
-	}
-	if acc.Email != "" && !strings.EqualFold(acc.Email, webEmail) {
-		return errors.New("扫码账号邮箱与该 Tower 账号不一致")
-	}
 	pending.client.email = webEmail
-	return cfg.Store.SaveWebSession(acc.ID, pending.client.jar.export(), webEmail, "")
+	return nil
+}
+
+func finishWebLogin(ctx context.Context, cfg Config, owner int64, accountID string, client *webClient) (map[string]any, error) {
+	if accountID == "" {
+		return (&webGrant{owner: owner, client: client}).authorize(ctx, cfg)
+	}
+	acc, err := webAccountForUser(cfg, owner, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if acc.Email == "" || !strings.EqualFold(acc.Email, client.email) {
+		return nil, errors.New("网页登录邮箱与该 Tower 账号不一致")
+	}
+	err = cfg.Store.SaveWebSession(acc.ID, client.jar.export(), client.email, "")
+	return map[string]any{"status": "connected", "web_connected": true, "web_email": client.email, "account_id": acc.ID}, err
 }
 
 func webAccountForUser(cfg Config, userID int64, accountID string) (*StoredAccount, error) {
