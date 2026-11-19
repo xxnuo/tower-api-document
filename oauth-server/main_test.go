@@ -893,7 +893,7 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 	req1.Header.Set("AGENTS_TOWER_API_KEY", acc.MCPAPIKey)
 	rec1 := httptest.NewRecorder()
 	mux.ServeHTTP(rec1, req1)
-	if rec1.Code != http.StatusOK || !strings.Contains(rec1.Body.String(), "已截断：是") {
+	if rec1.Code != http.StatusOK || !strings.Contains(rec1.Body.String(), "truncated：是") {
 		t.Fatalf("expected truncated meta in response: %d %s", rec1.Code, rec1.Body.String())
 	}
 	q1, _ := url.ParseQuery(seenQueries[0])
@@ -934,7 +934,7 @@ func TestListPaginationDefaultsAndCaps(t *testing.T) {
 		t.Fatal(rec4.Body.String())
 	}
 	resultText := pageResult.Result.Content[0].Text
-	if strings.Count(resultText, "  - ID ") != 10 || !strings.Contains(resultText, "还有下一页：是") {
+	if strings.Count(resultText, "  - ID ") != 10 || !strings.Contains(resultText, "has_more：是") {
 		t.Fatal(resultText)
 	}
 	for i := 11; i <= 20; i++ {

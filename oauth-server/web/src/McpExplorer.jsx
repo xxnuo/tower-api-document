@@ -46,7 +46,7 @@ function parseToolOptions(text) {
   const options = Array.from(text.matchAll(/^  - ID (\S+)(?: \| (.*))?$/gm), ([, id, name]) => ({
     id, label: (name || id).slice(0, 40),
   }));
-  return { options, next: text.match(/^下一页：(\S+)$/m)?.[1] };
+  return { options, next: text.match(/^(?:next|下一页)：(\S+)$/m)?.[1] };
 }
 
 export default function McpExplorer({ mcpKey, mcpServerURL, accountLabel, onGoCreds }) {

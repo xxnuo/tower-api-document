@@ -150,11 +150,6 @@ func (p resultProfile) compositeText(raw []byte) string {
 	return p.text(value)
 }
 
-var agentLabels = map[string]string{
-	"attachment": "附件", "byte_size": "字节数", "content_type": "媒体类型",
-	"id": "ID", "name": "名称", "keyword": "关键词", "count": "条数", "category": "类型", "time": "时间", "todolist_id": "清单", "section_link_id": "关联", "already": "原本已关联", "nickname": "昵称", "content": "内容", "desc": "描述", "title": "标题", "subject": "主题", "items": "结果", "meta": "分页", "next": "下一页", "has_more": "还有下一页", "page": "页码", "page_size": "每页数量", "original_count": "总条数", "returned": "本页条数", "truncated": "已截断", "is_completed": "已完成", "is_archived": "已归档", "is_active": "启用", "role": "角色", "team_wide_id": "任务编号", "assignee": "负责人", "creator": "创建人", "due_at": "截止日期", "created_at": "创建时间", "updated_at": "更新时间", "comments": "评论", "attachments": "附件", "teams": "团队", "assigned_uncompleted_todos": "指派给我的待办", "created_uncompleted_todos": "我创建的待办", "warnings": "提醒", "error": "错误", "url": "地址", "duration": "时长", "filename": "文件名", "project": "项目", "priority": "优先级",
-}
-
 func renderAgentValue(value any, preferred ...string) string {
 	switch v := value.(type) {
 	case map[string]any:
@@ -173,16 +168,12 @@ func renderAgentValue(value any, preferred ...string) string {
 		sort.Strings(keys[n:])
 		lines := make([]string, 0, len(keys))
 		for _, k := range keys {
-			label := agentLabels[k]
-			if label == "" {
-				label = k
-			}
 			field := renderAgentValue(v[k])
 			switch v[k].(type) {
 			case map[string]any, []any:
-				lines = append(lines, label+"：\n  "+strings.ReplaceAll(field, "\n", "\n  "))
+				lines = append(lines, k+"：\n  "+strings.ReplaceAll(field, "\n", "\n  "))
 			default:
-				lines = append(lines, label+"："+strings.ReplaceAll(field, "\n", "\n  "))
+				lines = append(lines, k+"："+strings.ReplaceAll(field, "\n", "\n  "))
 			}
 		}
 		if len(lines) == 0 {

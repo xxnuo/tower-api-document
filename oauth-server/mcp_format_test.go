@@ -70,9 +70,9 @@ func TestLinkedDetailResults(t *testing.T) {
 		name, body string
 		want       []string
 	}{
-		{"get_topic", `{"data":{"id":"discussion","type":"topics","attributes":{"title":"发布计划","content":"周五上线"},"relationships":{"comments":{"data":[{"type":"comments","id":"reply"}]}}},"included":[{"type":"comments","id":"reply","attributes":{"content":"已确认"}}]}`, []string{"ID：discussion", "标题：发布计划", "内容：周五上线", "已确认"}},
-		{"get_upload", `{"data":{"id":"file","type":"uploads","attributes":{"name":"会议记录"},"relationships":{"attachment":{"data":{"type":"attachments","id":"attachment-id"}}}},"included":[{"type":"attachments","id":"attachment-id","attributes":{"filename":"notes.md","byte_size":20,"icon_url":"discarded-thumbnail"}}]}`, []string{"附件：", "ID：attachment-id", "文件名：notes.md", "字节数：20"}},
-		{"get_attachment_url", `{"url":"https://example.org/file?signature=a%2Bb&expires=123"}`, []string{"地址：https://example.org/file?signature=a%2Bb&expires=123"}},
+		{"get_topic", `{"data":{"id":"discussion","type":"topics","attributes":{"title":"发布计划","content":"周五上线"},"relationships":{"comments":{"data":[{"type":"comments","id":"reply"}]}}},"included":[{"type":"comments","id":"reply","attributes":{"content":"已确认"}}]}`, []string{"id：discussion", "title：发布计划", "content：周五上线", "comments：\n  - ID reply | 已确认"}},
+		{"get_upload", `{"data":{"id":"file","type":"uploads","attributes":{"name":"会议记录"},"relationships":{"attachment":{"data":{"type":"attachments","id":"attachment-id"}}}},"included":[{"type":"attachments","id":"attachment-id","attributes":{"filename":"notes.md","byte_size":20,"icon_url":"discarded-thumbnail"}}]}`, []string{"attachment：", "id：attachment-id", "filename：notes.md", "byte_size：20"}},
+		{"get_attachment_url", `{"url":"https://example.org/file?signature=a%2Bb&expires=123"}`, []string{"url：https://example.org/file?signature=a%2Bb&expires=123"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text := resultProfiles[tc.name].text(compactTowerBody([]byte(tc.body), tc.name))
