@@ -656,6 +656,29 @@ func listMCPToolDefinitions() []map[string]any {
 			},
 		},
 		map[string]any{
+			"name":        "tower_search_todos",
+			"description": "按关键词聚合搜索任务（受限于 Tower Open API，按成员/项目/团队范围拉取后本地过滤，内置频率、并发与上游请求数限流）",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"keyword":    map[string]any{"type": "string", "description": "搜索关键词（匹配任务标题、描述或编号）"},
+					"member_id":  map[string]any{"type": "string", "description": "可选成员 ID（优先使用，速度最快）"},
+					"project_id": map[string]any{"type": "string", "description": "可选项目 ID（扫描该项目下的任务清单）"},
+					"team_id":    map[string]any{"type": "string", "description": "可选团队 ID（扫描该团队前 5 个项目；不传任何 ID 时默认搜索当前账号跨团队待办）"},
+					"status":     map[string]any{"type": "string", "description": "任务状态：all（默认）/ uncompleted / completed"},
+					"limit":      map[string]any{"type": "integer", "description": "最多返回条数（默认 20，最大 50）"},
+				},
+				"required": []string{"keyword"},
+			},
+			"annotations": map[string]any{
+				"title":           "聚合搜索任务（限流）",
+				"readOnlyHint":    true,
+				"destructiveHint": false,
+				"idempotentHint":  true,
+				"openWorldHint":   false,
+			},
+		},
+		map[string]any{
 			"name":        "tower_upload_file",
 			"description": "一步上传文件到阿里云 OSS 并关联创建为 Tower 项目文件（自动计算字节大小与 MD5、获取直传签名、上传表单并写入项目文件列表）",
 			"inputSchema": map[string]any{
@@ -970,6 +993,9 @@ func executeMCPTool(
 ) (string, bool) {
 	if name == "tower_my_todo_overview" {
 		return executeMyTodoOverview(ctx, cfg, mcpKey, acc, args)
+	}
+	if name == "tower_search_todos" {
+		return executeSearchTodos(ctx, cfg, mcpKey, acc, args)
 	}
 	if name == "tower_upload_file" {
 		return executeUploadFile(ctx, cfg, mcpKey, acc, args)

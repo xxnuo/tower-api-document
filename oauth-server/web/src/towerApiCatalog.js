@@ -90,6 +90,14 @@ export const TOWER_API_CATALOG = [
   { id: "todolists-delete", group: "任务清单", name: "删除任务清单", method: "DELETE", path: "/api/v1/todolists/{id}" },
 
   // 任务
+  {
+    id: "todos-search",
+    group: "任务",
+    name: "搜索任务（聚合/限流）",
+    method: "GET",
+    path: "/api/v1/todos/search",
+    defaultQuery: "keyword=&status=all&limit=20",
+  },
   { id: "todos-list", group: "任务", name: "获取清单任务", method: "GET", path: "/api/v1/todolists/{todolist_id}/todos" },
   {
     id: "todos-create",

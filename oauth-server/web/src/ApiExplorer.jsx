@@ -14,6 +14,7 @@ function extractPathParams(path) {
 }
 
 function defaultQueryForEndpoint(item) {
+  if (item.defaultQuery) return item.defaultQuery;
   if (item.method !== "GET") return "";
   for (const suffix of [
     "/members",

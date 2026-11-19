@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -18,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -749,6 +752,46 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 		}
 
 		rawQuery := strings.TrimPrefix(strings.TrimSpace(payload.Query), "?")
+		if method == http.MethodGet && apiPath == "/api/v1/todos/search" {
+			started := time.Now()
+			qVals, _ := url.ParseQuery(rawQuery)
+			limit, _ := strconv.Atoi(qVals.Get("limit"))
+			params := searchTodosParams{
+				Keyword:   qVals.Get("keyword"),
+				TeamID:    qVals.Get("team_id"),
+				ProjectID: qVals.Get("project_id"),
+				MemberID:  qVals.Get("member_id"),
+				Status:    qVals.Get("status"),
+				Limit:     limit,
+			}
+			fetch := func(callCtx context.Context, path, query string) (int, []byte, error) {
+				target := cfg.BaseURL + path
+				if query != "" {
+					target += "?" + query
+				}
+				upReq, reqErr := http.NewRequestWithContext(callCtx, http.MethodGet, target, nil)
+				if reqErr != nil {
+					return 0, nil, reqErr
+				}
+				upReq.Header.Set("Authorization", "Bearer "+token)
+				upReq.Header.Set("Accept", "application/json")
+				upResp, doErr := cfg.HTTPClient.Do(upReq)
+				if doErr != nil {
+					return 0, nil, doErr
+				}
+				defer upResp.Body.Close()
+				upBytes, readErr := io.ReadAll(io.LimitReader(upResp.Body, 2<<20))
+				return upResp.StatusCode, upBytes, readErr
+			}
+			statusCode, result := searchTodos(req.Context(), defaultTodoSearchLimiter, "proxy:"+strings.TrimSpace(payload.AccessToken), fetch, params)
+			writeJSON(writer, http.StatusOK, map[string]any{
+				"status":      statusCode,
+				"status_text": fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode)),
+				"duration_ms": time.Since(started).Milliseconds(),
+				"body":        result,
+			})
+			return
+		}
 		normalizedQuery, maxItems := normalizeListQuery(method, apiPath, rawQuery)
 		targetURL := cfg.BaseURL + apiPath
 		if normalizedQuery != "" {
