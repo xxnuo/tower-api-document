@@ -936,6 +936,15 @@ func dispatchMCPMethod(
 		return rpcResult(rpcReq.ID, map[string]any{})
 
 	case "tools/list":
+		if !ownsAnyTeam(ctx, cfg, acc.AccessToken) {
+			visible := make([]map[string]any, 0, len(toolDefs))
+			for _, def := range toolDefs {
+				if def["name"] != "rename_team" {
+					visible = append(visible, def)
+				}
+			}
+			toolDefs = visible
+		}
 		return rpcResult(rpcReq.ID, map[string]any{
 			"tools": toolDefs,
 		})
@@ -1363,6 +1372,9 @@ func callTowerForMCP(
 	page, maxItems int,
 	localSlice bool,
 ) (string, bool) {
+	if teamWriteDenied(ctx, cfg, acc.AccessToken, method, apiPath) {
+		return "HTTP 403: " + renameDenied, true
+	}
 	if method == http.MethodDelete && !isSafeTodoStateDelete(apiPath) {
 		if cfg.Store == nil || !cfg.Store.GetSettings().AllowMCPDelete {
 			return "服务端已启用硬删除保护：禁止通过 MCP 删除项目、清单、任务或文件资源（仅允许取消任务完成状态或移除负责人；管理员可在「成员管理」后台开启硬删除权限）", true

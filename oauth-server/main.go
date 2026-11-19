@@ -792,6 +792,10 @@ func handleAPIProxy(cfg Config) http.HandlerFunc {
 			})
 			return
 		}
+		if teamWriteDenied(req.Context(), cfg, token, method, apiPath) {
+			writeJSON(writer, http.StatusForbidden, map[string]any{"error": renameDenied})
+			return
+		}
 		normalizedQuery, maxItems := normalizeListQuery(method, apiPath, rawQuery)
 		targetURL := cfg.BaseURL + apiPath
 		if normalizedQuery != "" {

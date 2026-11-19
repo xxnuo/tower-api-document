@@ -200,6 +200,25 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
     return p;
   }, [endpoint.path, paramNames, getParamValue]);
 
+  const renameTarget = endpoint.id === "teams-rename" && effectiveToken && !resolvedPath.includes("{") ? resolvedPath : "";
+  const [verifiedOwner, setVerifiedOwner] = useState(null);
+  useEffect(() => {
+    let active = true;
+    setVerifiedOwner(null);
+    if (renameTarget) {
+      fetch("/api/proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method: "GET", path: renameTarget + "/member", access_token: effectiveToken }),
+      }).then(res => res.json()).then(result => {
+        if (active && result.body?.data?.attributes?.role === "owner")
+          setVerifiedOwner({ token: effectiveToken, target: renameTarget });
+      }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [effectiveToken, renameTarget]);
+  const renameLocked = endpoint.id === "teams-rename" &&
+    !(verifiedOwner?.target === renameTarget && verifiedOwner?.token === effectiveToken);
+
   const hasUnfilledParams = paramNames.some((name) => !getParamValue(name).trim());
 
   useEffect(() => {
@@ -284,7 +303,7 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
   }
 
   async function executeSend() {
-    if (readOnly) return;
+    if (readOnly || renameLocked) return;
     if (!effectiveToken) {
       setError("请先登录账号获取 Access Token，或在下方填入临时 Token");
       return;
@@ -646,10 +665,10 @@ export default function ApiExplorer({ accessToken, accountLabel }) {
                   <Button
                     type="button"
                     variant={endpoint.method === "DELETE" ? "destructive" : "default"}
-                    disabled={loading}
+                    disabled={loading || renameLocked}
                     onClick={handleSend}
                   >
-                    {loading ? "请求中..." : "发送请求"}
+                    {renameLocked ? "仅团队超级管理员可执行" : loading ? "请求中..." : "发送请求"}
                   </Button>
                   <Button type="button" variant="outline" onClick={() => copyText("curl", curlCommand)}>
                     {copiedKey === "curl" ? <CheckIcon /> : <CopyIcon />}
