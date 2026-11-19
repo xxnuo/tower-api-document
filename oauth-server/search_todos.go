@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -147,26 +148,61 @@ func searchTodos(
 		limit = maxListPageSize
 	}
 
-	var upstreamCount atomic.Int32
-	var truncated atomic.Bool
-
+	var (
+		upstreamCount atomic.Int32
+		resultLimited bool
+		mu            sync.Mutex
+		seenIDs       = make(map[string]struct{})
+		matched       = make([]map[string]any, 0, limit)
+		scanned       int
+		scope         string
+		warnings      []string
+	)
+	warn := func(reason string) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !slices.Contains(warnings, reason) {
+			warnings = append(warnings, reason)
+		}
+	}
 	budgetFetch := func(path, query string) (int, []byte, error) {
 		if upstreamCount.Add(1) > searchMaxUpstreamBudget {
 			upstreamCount.Add(-1)
-			truncated.Store(true)
+			warn(fmt.Sprintf("已达上游请求预算（%d 次），部分范围未扫描", searchMaxUpstreamBudget))
 			return 0, nil, nil
 		}
-		return fetch(ctx, path, query)
+		code, body, err := fetch(ctx, path, query)
+		if err != nil {
+			warn(fmt.Sprintf("请求 %s 失败: %v", path, err))
+		} else if code < 200 || code >= 300 {
+			warn(fmt.Sprintf("请求 %s 返回 HTTP %d", path, code))
+		}
+		return code, body, err
 	}
-
-	var (
-		mu       sync.Mutex
-		seenIDs  = make(map[string]struct{})
-		matched  = make([]map[string]any, 0, limit)
-		scanned  int
-		scope    string
-		warnings []string
-	)
+	scanRows := func(raw []byte, label string, capRows int) []map[string]any {
+		doc, rows := decodeMCPList(raw)
+		if rows == nil {
+			warn(label + "响应缺少有效列表")
+			return nil
+		}
+		if mcpListHasOmittedRows(doc, len(rows)) {
+			warn(label + "：Tower 只返回了部分记录")
+		}
+		if capRows > 0 && len(rows) > capRows {
+			warn(fmt.Sprintf("%s扫描上限为 %d 条，额外记录未扫描", label, capRows))
+			rows = rows[:capRows]
+		}
+		items := make([]map[string]any, 0, len(rows))
+		for _, row := range rows {
+			item, ok := row.(map[string]any)
+			if !ok || stringifyArg(item["id"]) == "" {
+				warn(label + "响应包含缺少有效 ID 的记录")
+				continue
+			}
+			items = append(items, item)
+		}
+		return items
+	}
 
 	kwLower := strings.ToLower(keyword)
 	collectItems := func(items []map[string]any) {
@@ -174,20 +210,18 @@ func searchTodos(
 		defer mu.Unlock()
 		for _, item := range items {
 			scanned++
-			id, _ := item["id"].(string)
-			if id != "" {
-				if _, ok := seenIDs[id]; ok {
-					continue
-				}
-				seenIDs[id] = struct{}{}
+			id := stringifyArg(item["id"])
+			if _, ok := seenIDs[id]; ok {
+				continue
 			}
+			seenIDs[id] = struct{}{}
 			if !todoMatchesStatus(item, status) || !todoMatchesKeyword(item, kwLower) {
 				continue
 			}
 			if len(matched) < limit {
 				matched = append(matched, item)
 			} else {
-				truncated.Store(true)
+				resultLimited = true
 			}
 		}
 	}
@@ -198,48 +232,45 @@ func searchTodos(
 		for _, ep := range endpoints {
 			path := "/api/v1/members/" + url.PathEscape(memberID) + "/" + ep
 			code, body, err := budgetFetch(path, q)
-			if err != nil {
-				mu.Lock()
-				warnings = append(warnings, fmt.Sprintf("请求 %s 失败: %v", ep, err))
-				mu.Unlock()
+			if err != nil || code < 200 || code >= 300 {
 				continue
 			}
-			if code == 0 || code >= 400 {
-				continue
+			if status == "uncompleted" {
+				warn("Tower 成员专用待办接口可能省略任务")
 			}
-			collectItems(extractJSONAPIDataItems(body))
+			if status == "all" {
+				body, _ = unwrapMemberTodoList(body)
+			}
+			collectItems(scanRows(body, "成员任务", 0))
 		}
 	}
 
 	fetchProjectTodos := func(projectID string) {
 		tlPath := "/api/v1/projects/" + url.PathEscape(projectID) + "/todolists"
 		code, body, err := budgetFetch(tlPath, fmt.Sprintf("page[number]=1&page[size]=%d", searchMaxTodolistsPerPrj))
-		if err != nil || code == 0 || code >= 400 {
+		if err != nil || code < 200 || code >= 300 {
 			return
 		}
-		todolists := extractJSONAPIDataItems(body)
-		if len(todolists) > searchMaxTodolistsPerPrj {
-			todolists = todolists[:searchMaxTodolistsPerPrj]
-			truncated.Store(true)
-		}
+		todolists := scanRows(body, "项目清单", searchMaxTodolistsPerPrj)
 		sem := make(chan struct{}, searchMaxUpstreamConcur)
 		var wg sync.WaitGroup
 		for _, tl := range todolists {
-			tlID, _ := tl["id"].(string)
-			if tlID == "" {
-				continue
-			}
+			tlID := stringifyArg(tl["id"])
 			wg.Add(1)
 			go func(id string) {
 				defer wg.Done()
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				tPath := "/api/v1/todolists/" + url.PathEscape(id) + "/todos"
-				tCode, tBody, tErr := budgetFetch(tPath, fmt.Sprintf("page[number]=1&page[size]=%d", maxListPageSize))
-				if tErr != nil || tCode == 0 || tCode >= 400 {
+				query := fmt.Sprintf("page[number]=1&page[size]=%d", maxListPageSize)
+				if status != "uncompleted" {
+					query += "&completed_todo=true"
+				}
+				tCode, tBody, tErr := budgetFetch(tPath, query)
+				if tErr != nil || tCode < 200 || tCode >= 300 {
 					return
 				}
-				collectItems(extractJSONAPIDataItems(tBody))
+				collectItems(scanRows(tBody, "清单任务", 0))
 			}(tlID)
 		}
 		wg.Wait()
@@ -263,17 +294,8 @@ func searchTodos(
 		if code >= 400 {
 			return code, map[string]any{"error": fmt.Sprintf("查询团队项目返回 HTTP %d", code)}
 		}
-		projects := extractJSONAPIDataItems(body)
-		if len(projects) > searchMaxProjectsScan {
-			projects = projects[:searchMaxProjectsScan]
-			truncated.Store(true)
-		}
-		for _, prj := range projects {
-			pID, _ := prj["id"].(string)
-			if pID == "" {
-				continue
-			}
-			fetchProjectTodos(pID)
+		for _, prj := range scanRows(body, "团队项目", searchMaxProjectsScan) {
+			fetchProjectTodos(stringifyArg(prj["id"]))
 		}
 	default:
 		scope = "my_teams"
@@ -284,18 +306,10 @@ func searchTodos(
 		if code >= 400 {
 			return code, map[string]any{"error": fmt.Sprintf("查询团队列表返回 HTTP %d", code)}
 		}
-		teams := extractJSONAPIDataItems(body)
-		if len(teams) > searchMaxTeamsScan {
-			teams = teams[:searchMaxTeamsScan]
-			truncated.Store(true)
-		}
-		for _, tm := range teams {
-			tID, _ := tm["id"].(string)
-			if tID == "" {
-				continue
-			}
+		for _, tm := range scanRows(body, "团队列表", searchMaxTeamsScan) {
+			tID := stringifyArg(tm["id"])
 			mCode, mBody, mErr := budgetFetch("/api/v1/teams/"+url.PathEscape(tID)+"/member", "")
-			if mErr != nil || mCode == 0 || mCode >= 400 {
+			if mErr != nil || mCode < 200 || mCode >= 300 {
 				continue
 			}
 			var memberDoc struct {
@@ -305,10 +319,16 @@ func searchTodos(
 			}
 			if json.Unmarshal(mBody, &memberDoc) == nil && memberDoc.Data.ID != "" {
 				fetchMemberTodos(memberDoc.Data.ID)
+			} else {
+				warn("Tower 团队成员响应缺少有效成员 ID")
 			}
 		}
 	}
 
+	if resultLimited {
+		warn(fmt.Sprintf("已达搜索结果上限（%d 条），额外匹配结果已省略", limit))
+	}
+	slices.Sort(warnings)
 	result := map[string]any{
 		"keyword":           keyword,
 		"status":            status,
@@ -317,11 +337,12 @@ func searchTodos(
 		"matched_count":     len(matched),
 		"scanned_count":     scanned,
 		"upstream_requests": int(upstreamCount.Load()),
-		"truncated":         truncated.Load(),
+		"truncated":         len(warnings) > 0,
 		"items":             matched,
 	}
 	if len(warnings) > 0 {
 		result["warnings"] = warnings
+		result["incomplete_reason"] = strings.Join(warnings, "。")
 	}
 	return http.StatusOK, result
 }

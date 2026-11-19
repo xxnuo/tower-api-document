@@ -41,11 +41,25 @@ func paginateMCPList(raw []byte, page, size int, local bool, cursorQuery url.Val
 		meta = map[string]any{}
 	}
 	upstreamMore, hasUpstreamMore := meta["has_more"].(bool)
+	omitted := local && mcpListHasOmittedRows(doc, len(items))
 	delete(meta, "next_page")
 	delete(meta, "next_cursor")
 	meta["page_size"] = size
 	meta["has_more"] = nil
 	total, totalKnown := mcpListTotal(meta)
+	if omitted && meta["scope_complete"] != false {
+		meta["scope_complete"] = false
+		meta["incomplete_reason"] = "Tower 只返回了部分记录，无法通过本地翻页获取其余记录"
+	}
+	if meta["truncated"] == true && meta["incomplete_reason"] == nil {
+		meta["incomplete_reason"] = "Tower 标记当前列表已截断"
+	}
+	if meta["scope_complete"] == false && meta["incomplete_reason"] == nil {
+		meta["incomplete_reason"] = meta["scope_warning"]
+		if meta["incomplete_reason"] == nil {
+			meta["incomplete_reason"] = "当前列表只覆盖部分查询范围"
+		}
+	}
 	if totalKnown {
 		meta["total"] = total
 	} else {
@@ -81,12 +95,15 @@ func paginateMCPList(raw []byte, page, size int, local bool, cursorQuery url.Val
 			case page < lastAvailablePage:
 				meta["has_more"] = true
 				meta["next_page"] = page + 1
-			case totalKnown && total <= len(items):
+			case totalKnown && total <= len(items) && meta["scope_complete"] != false:
 				meta["has_more"] = false
 			}
 		} else {
 			next, hasNextLink := links["next"]
 			lastPage := mcpLinkedPage(links["last"])
+			if lastPage == 0 {
+				lastPage = parsePositivePage(stringifyArg(meta["total_pages"]))
+			}
 			switch {
 			case hasNextLink:
 				meta["has_more"] = stringifyArg(next) != ""
@@ -112,11 +129,26 @@ func paginateMCPList(raw []byte, page, size int, local bool, cursorQuery url.Val
 	}
 	if !local && len(items) > size {
 		meta["truncated"] = true
+		meta["incomplete_reason"] = "Tower 返回的本页记录超过请求大小，超出部分已省略"
+	}
+	if cursorQuery != nil && meta["has_more"] != false && meta["next_cursor"] == nil {
+		meta["incomplete_reason"] = "Tower 未返回可继续翻页的动态 ID"
 	}
 	doc["data"] = sliced
 	doc["meta"] = meta
 	out, _ := json.Marshal(doc)
 	return out
+}
+
+// Only explicit upstream evidence proves that records outside this page exist.
+func mcpListHasOmittedRows(doc map[string]any, returned int) bool {
+	meta, _ := doc["meta"].(map[string]any)
+	links, _ := doc["links"].(map[string]any)
+	total, known := mcpListTotal(meta)
+	pages := parsePositivePage(stringifyArg(meta["total_pages"]))
+	return meta["has_more"] == true || meta["scope_complete"] == false || meta["truncated"] == true ||
+		stringifyArg(links["next"]) != "" || mcpLinkedPage(links["last"]) > 1 ||
+		pages > 1 || known && total > returned
 }
 
 func mcpLinkedPage(link any) int {
@@ -150,10 +182,18 @@ func mcpListTotal(meta map[string]any) (int, bool) {
 func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
 	doc, existing := decodeMCPList(raw)
 	if existing != nil {
+		if !mcpListHasOmittedRows(doc, len(existing)) {
+			return raw, true
+		}
 		meta, _ := doc["meta"].(map[string]any)
-		links, _ := doc["links"].(map[string]any)
-		knownTotal, hasTotal := mcpListTotal(meta)
-		return raw, stringifyArg(links["next"]) == "" && meta["has_more"] != true && (!hasTotal || knownTotal <= len(existing))
+		if meta == nil {
+			meta = map[string]any{}
+			doc["meta"] = meta
+		}
+		meta["scope_complete"] = false
+		meta["incomplete_reason"] = "Tower 成员任务关系只返回了部分记录"
+		out, _ := json.Marshal(doc)
+		return out, false
 	}
 	member, _ := doc["data"].(map[string]any)
 	rels, _ := member["relationships"].(map[string]any)
@@ -171,7 +211,8 @@ func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
 		resources[key] = item
 	}
 	items := make([]any, 0, len(refs))
-	complete := true
+	complete := !mcpListHasOmittedRows(todos, len(refs)) && !mcpListHasOmittedRows(doc, len(refs))
+	reason := "Tower 成员任务关系只返回了部分记录"
 	for _, row := range refs {
 		ref, _ := row.(map[string]any)
 		key := resourceKey{stringifyArg(ref["type"]), stringifyArg(ref["id"])}
@@ -179,14 +220,16 @@ func unwrapMemberTodoList(raw []byte) ([]byte, bool) {
 			row = item
 		} else {
 			complete = false
+			reason = "Tower 成员任务关系有记录缺少详情"
 		}
 		items = append(items, row)
 	}
 	doc["data"] = items
 	if !complete {
 		doc["meta"] = map[string]any{
-			"scope_complete": false,
-			"scope_warning":  "Tower 成员任务关系有记录缺少详情",
+			"scope_complete":    false,
+			"scope_warning":     reason,
+			"incomplete_reason": reason,
 		}
 	}
 	out, _ := json.Marshal(doc)
@@ -234,9 +277,11 @@ func loadMemberUncompletedTodos(ctx context.Context, cfg Config, mcpKey string, 
 	if rows == nil {
 		return code, raw, fmt.Errorf("Tower 返回的成员待办格式无效或超出响应大小限制")
 	}
+	reason := "未能确认成员全部任务关系，当前结果来自 Tower 可能省略任务的专用待办接口。"
 	doc["meta"] = map[string]any{
-		"scope_complete": false,
-		"scope_warning":  "未能确认成员全部任务关系，当前结果来自 Tower 可能省略任务的专用待办接口。",
+		"scope_complete":    false,
+		"scope_warning":     reason,
+		"incomplete_reason": reason,
 	}
 	body, _ := json.Marshal(doc)
 	return code, body, nil

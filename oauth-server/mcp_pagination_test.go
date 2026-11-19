@@ -16,11 +16,12 @@ func TestMCPListPaginationMetadata(t *testing.T) {
 		local        bool
 		want, absent []string
 	}{
-		{"native full", `{"data":[{"id":"1"},{"id":"2"}]}`, 1, 2, false, []string{`"has_more":null`, `"next_page":2`, `"returned":2`}, []string{`"total"`, `"truncated"`}},
+		{"native full", `{"data":[{"id":"1"},{"id":"2"}]}`, 1, 2, false, []string{`"has_more":null`, `"next_page":2`, `"returned":2`}, []string{`"total"`, `"truncated"`, `"incomplete_reason"`}},
+		{"native overflow", `{"data":[{"id":"1"},{"id":"2"},{"id":"3"}]}`, 1, 2, false, []string{`"incomplete_reason"`, `"truncated":true`}, nil},
 		{"native last", `{"data":[{"id":"3"}],"links":{"next":null},"meta":{"total_count":3}}`, 2, 2, false, []string{`"has_more":false`, `"total":3`, `"returned":1`}, []string{`"next_page"`, `"truncated"`}},
 		{"native last via links", `{"data":[{"id":"1"},{"id":"2"}],"links":{"last":"https://tower.im/api/v1/teams/t/projects?page%5Bnumber%5D=1"}}`, 1, 2, false, []string{`"has_more":false`, `"total":2`, `"returned":2`}, []string{`"next_page"`, `"truncated"`}},
 		{"local list", `[{"id":"1"},{"id":"2"},{"id":"3"}]`, 2, 2, true, []string{`"id":"3"`, `"total":3`, `"has_more":false`, `"returned":1`}, []string{`"id":"1"`, `"truncated"`}},
-		{"scope incomplete", `{"meta":{"scope_complete":false},"data":[{"id":"1"},{"id":"2"},{"id":"3"}]}`, 2, 2, true, []string{`"has_more":null`, `"returned":1`}, []string{`"total"`, `"next_page"`, `"truncated"`}},
+		{"scope incomplete", `{"meta":{"scope_complete":false},"data":[{"id":"1"},{"id":"2"},{"id":"3"}]}`, 2, 2, true, []string{`"has_more":null`, `"returned":1`, `"incomplete_reason"`}, []string{`"total"`, `"next_page"`, `"truncated"`}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := string(paginateMCPList([]byte(tt.body), tt.page, tt.size, tt.local, nil))
@@ -128,8 +129,8 @@ func TestMCPOverviewCountAndErrors(t *testing.T) {
 	}{
 		{"known", map[string]any{"team_id": "1", "page_size": 1}, []string{"total_assigned_uncompleted：3", "returned_assigned_uncompleted：1", "assigned_uncompleted_count：3", "assigned_uncompleted_returned：1"}},
 		{"member cap", map[string]any{"team_id": "2", "page_size": 1}, []string{"total_assigned_uncompleted：未知", "returned_assigned_uncompleted：1", "assigned_uncompleted_count：未知"}},
-		{"fallback below cap", map[string]any{"team_id": "4", "page_size": 1}, []string{"total_assigned_uncompleted：未知", "returned_assigned_uncompleted：1", "assigned_uncompleted_warning："}},
-		{"team cap and error", map[string]any{"page_size": 1}, []string{"teams_checked：10", "teams_available：12", "teams_skipped：2", "teams_failed：1", "total_assigned_uncompleted：未知", "returned_assigned_uncompleted：3", "assigned_uncompleted_error：Tower API 返回 HTTP 403"}},
+		{"fallback below cap", map[string]any{"team_id": "4", "page_size": 1}, []string{"total_assigned_uncompleted：未知", "returned_assigned_uncompleted：1", "assigned_uncompleted_warning：", "incomplete_reason："}},
+		{"team cap and error", map[string]any{"page_size": 1}, []string{"teams_checked：10", "teams_available：12", "teams_skipped：2", "teams_failed：1", "total_assigned_uncompleted：未知", "returned_assigned_uncompleted：3", "assigned_uncompleted_error：Tower API 返回 HTTP 403", "incomplete_reason："}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, failed := executeMyTodoOverview(t.Context(), testConfig(tower.URL), "", &StoredAccount{}, tt.args)

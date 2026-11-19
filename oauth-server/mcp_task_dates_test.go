@@ -26,8 +26,11 @@ func TestTodoListDateAvailability(t *testing.T) {
 func TestAssignedTodoDueFilterUsesFullSource(t *testing.T) {
 	calls := 0
 	rows := []map[string]any{}
-	for i := range 210 {
+	for i := range 270 {
 		var due any = "2026-11-19"
+		if i == 184 {
+			due = "2026-11-18T16:00:00Z"
+		}
 		if i >= 185 {
 			due = "2026-11-18T23:30:00+08:00"
 		}
@@ -61,19 +64,27 @@ func TestAssignedTodoDueFilterUsesFullSource(t *testing.T) {
 	}
 	name := "list_member_assigned_uncompleted_todos"
 	got, failed := executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-11-19"})
-	if failed || calls != 1 || strings.Count(got, "- ID ") != 25 || !strings.Contains(got, "scope_complete：是") || strings.Contains(got, "- ID T184") || !strings.Contains(got, "- ID T209") {
+	if failed || calls != 1 || strings.Count(got, "- ID ") != 85 || !strings.Contains(got, "scope_complete：是") || !strings.Contains(got, "matched_count：85") || !strings.Contains(got, "returned：85") || !strings.Contains(got, "total：85") || !strings.Contains(got, "has_more：否") || strings.Contains(got, "next_page") || strings.Contains(got, "- ID T184") || !strings.Contains(got, "- ID T269") {
 		t.Fatal(got, calls)
 	}
 	got, failed = executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-11-19", "page": 2, "page_size": 20})
-	if failed || calls != 2 || strings.Count(got, "- ID ") != 5 || !strings.Contains(got, "- ID T205") {
+	if failed || calls != 2 || strings.Count(got, "- ID ") != 20 || !strings.Contains(got, "- ID T205") || !strings.Contains(got, "total：85") || !strings.Contains(got, "next_page：3") {
 		t.Fatal(got, calls)
 	}
-	if _, failed := executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-02-30"}); !failed || calls != 2 {
+	got, failed = executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-11-19", "page": 2})
+	if failed || calls != 3 || strings.Count(got, "- ID ") != 35 || !strings.Contains(got, "- ID T235") || !strings.Contains(got, "page_size：50") {
+		t.Fatal(got, calls)
+	}
+	got, failed = executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-11-19", "page_size": 1})
+	if failed || calls != 4 || strings.Count(got, "- ID ") != 1 || !strings.Contains(got, "- ID T185") || !strings.Contains(got, "next_page：2") {
+		t.Fatal(got, calls)
+	}
+	if _, failed := executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-02-30"}); !failed || calls != 4 {
 		t.Fatal("invalid date reached upstream", calls)
 	}
 	fallback = true
 	got, failed = executeMCPTool(context.Background(), cfg, "", &StoredAccount{}, index, name, map[string]any{"member_id": "m", "due_before": "2026-11-19"})
-	if failed || calls != 4 || strings.Count(got, "- ID ") != 15 || !strings.Contains(got, "scope_complete：否") || !strings.Contains(got, "scope_warning：") {
+	if failed || calls != 6 || strings.Count(got, "- ID ") != 15 || !strings.Contains(got, "scope_complete：否") || !strings.Contains(got, "scope_warning：") || strings.Contains(got, "total：") || !strings.Contains(got, "has_more：未知") {
 		t.Fatal(got, calls)
 	}
 }

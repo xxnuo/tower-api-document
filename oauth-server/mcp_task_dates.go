@@ -118,10 +118,25 @@ func executeDueTodoList(ctx context.Context, cfg Config, mcpKey string, acc *Sto
 	}
 	if !scopeComplete {
 		meta["scope_warning"] = upstreamMeta["scope_warning"]
+		meta["incomplete_reason"] = upstreamMeta["incomplete_reason"]
 	}
 	if unknown > 0 {
 		meta["due_date_unavailable_count"] = unknown
+		if scopeComplete {
+			meta["incomplete_reason"] = "部分任务缺少可用于筛选的截止日期"
+		}
+	}
+	if size == 0 {
+		meta["returned"] = len(matches)
+		meta["has_more"] = nil
+		if meta["scope_complete"] == true {
+			meta["total"] = len(matches)
+			meta["has_more"] = false
+		}
 	}
 	filtered, _ := json.Marshal(map[string]any{"data": matches, "included": doc["included"], "meta": meta})
-	return resultProfiles[tool].text(compactTowerBody(paginateMCPList(filtered, page, size, true, nil), tool)), false
+	if size > 0 {
+		filtered = paginateMCPList(filtered, page, size, true, nil)
+	}
+	return resultProfiles[tool].text(compactTowerBody(filtered, tool)), false
 }

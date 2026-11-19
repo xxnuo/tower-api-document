@@ -48,9 +48,11 @@ Tower API 采用层级资源结构。除复合快捷工具外，常规操作请�
 
 - 标准 `list_*` 工具默认每页 20 条，最大 50 条。按 `meta.next_page` 继续请求，保留原有筛选参数与 `page_size`。
 - `list_events` 使用 Tower 游标分页。将 `meta.next_cursor` 传给下一次调用的 `last_item_id`，保留原 `page_size`。
+- `list_todos(order="-created_at")` 先读取清单的所有任务页，按创建时间倒序排列，再返回请求的页。
+- 列表在 `meta.incomplete_reason` 中说明无法取全的原因。待办概览和高级搜索在顶层返回该字段。
 - `meta.returned` 是本次返回条数。仅在能确认总数时提供 `meta.total`。`meta.has_more` 为「未知」时，Tower 未确认是否还有下一页，若同时提供下一页参数，可继续请求确认。正常分页不会标记为截断。
 - `list_project_todos` 遍历指定项目的全部清单。默认包含已完成任务，传 `completed_todo=false` 仅取未完成任务。将 `next_cursor` 传给下一次的 `cursor`；游标由当前网关进程保存，最长 15 分钟。
-- 使用 `list_member_assigned_uncompleted_todos(overdue=true)` 查询北京时间今天之前已到期的未完成任务，也可用 `due_before=YYYY-MM-DD` 指定日期。筛选后默认最多返回 50 条。
+- 使用 `list_member_assigned_uncompleted_todos(overdue=true)` 查询北京时间今天之前已到期的未完成任务，也可用 `due_before=YYYY-MM-DD` 指定日期，截止当天不计入。省略 `page` 和 `page_size` 时一次返回所有可确认的匹配项。指定任一分页参数时按页返回，筛选时默认每页 50 条。若 `scope_complete` 为「否」，匹配数仅反映已扫描到且能确认截止日期的记录。
 - 成员未完成任务列表优先通过成员任务关系查询活跃且未完成的任务。关系数据不可用时回退到 Tower 的专用列表，专用列表可能省略任务，此时总数未知。
 - `my_todo_overview` 未指定 `team_id` 时最多检查 10 个团队。每个团队的每类任务默认返回 20 条，最多 50 条。检查失败、跳过团队或仅得到部分任务时，对应总数未知。
 - `raw_request` 对识别出的分页路径使用现有的默认页大小及上限。可传 `data_only=true` 只返回当前页数据，或传 `fields=["id","content","created_at"]` 选择字段。

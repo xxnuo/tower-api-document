@@ -69,11 +69,11 @@ var resultProfiles = map[string]resultProfile{
 	"delete_time_log":                        {"工时记录已删除", "id duration"},
 	"list_events":                            {"团队动态", "id action title creator created_at ancestor_type ancestor_name"},
 	"list_notifications":                     {"团队通知", "id read progress target_guid notifyable_type created_at subject_str action_str content_str extra_info"},
-	"advanced_search_todos":                  {"高级任务搜索结果", "keyword scope status matched_count scanned_count items truncated warnings"},
+	"advanced_search_todos":                  {"高级任务搜索结果", "keyword scope status matched_count scanned_count incomplete_reason items truncated warnings"},
 	"search_todos":                           {"任务搜索结果", "keyword page count has_more next_page items"},
 	"add_todo_project":                       {"所属项目已添加", "todo_id project_id todolist_id todolist section_link_id already"},
 	"remove_todo_project":                    {"所属项目已移除", "todo_id project_id section_link_id"},
-	"my_todo_overview":                       {"我的待办概览", "teams_checked teams_available teams_skipped teams_failed page_size total_assigned_uncompleted returned_assigned_uncompleted total_created_uncompleted returned_created_uncompleted teams"},
+	"my_todo_overview":                       {"我的待办概览", "teams_checked teams_available teams_skipped teams_failed page_size total_assigned_uncompleted returned_assigned_uncompleted total_created_uncompleted returned_created_uncompleted incomplete_reason teams"},
 	"upload_file":                            {"文件已上传", "filename attfile_guid byte_size md5 upload"},
 	"raw_request":                            {"Tower API 响应", "*"},
 }

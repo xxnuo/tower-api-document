@@ -197,10 +197,11 @@ var towerMCPTools = []mcpToolSpec{
 	},
 	{
 		Name: "list_member_assigned_uncompleted_todos", Title: "获取指派给成员的未完成任务",
-		Desc:   "获取指派给指定成员的未完成任务。设置 overdue 或 due_before 时先在 Tower 返回的成员任务中筛选，再分页（筛选时默认 50 条）。",
+		Desc:   "获取指派给指定成员的未完成任务。设置 overdue=true 或 due_before 时先筛选。省略 page 和 page_size 则返回全部已确认匹配的任务。指定任一分页参数则分页，筛选时默认每页 50 条。scope_complete 表示是否能确认筛选范围完整。",
 		Method: http.MethodGet, PathTemplate: "/api/v1/members/{member_id}/assigned_uncompleted_todos",
 		Params: []mcpParam{
-			pPath("member_id", "成员 ID"), pLocalPage(), pLocalPageSize(),
+			pPath("member_id", "成员 ID"), pLocalPage(),
+			{Name: "page_size", Type: "integer", In: "limit_only", Desc: "每页返回条数，最大 50。普通查询默认 20，按截止日期筛选并指定 page 时默认 50。"},
 			{Name: "overdue", Type: "boolean", Desc: "仅返回截止日期早于北京时间今天的任务"},
 			{Name: "due_before", Type: "string", Desc: "仅返回截止日期早于 YYYY-MM-DD 的任务，不含该日。与 overdue 同用时两者均需满足。"},
 		},
@@ -1153,7 +1154,9 @@ func executeMCPTool(
 			return err.Error(), true
 		}
 		if cutoff != "" {
-			if args["page_size"] == nil {
+			if args["page"] == nil && args["page_size"] == nil {
+				maxItems = 0
+			} else if args["page_size"] == nil {
 				maxItems = maxListPageSize
 			}
 			return executeDueTodoList(ctx, cfg, mcpKey, acc, name, resolvedPath, cutoff, pageNum, maxItems)
@@ -1483,16 +1486,6 @@ func readTowerResponse(reader io.Reader) ([]byte, error) {
 	return body, err
 }
 
-func extractJSONAPIDataItems(raw []byte) []map[string]any {
-	var doc struct {
-		Data []map[string]any `json:"data"`
-	}
-	if json.Unmarshal(raw, &doc) == nil && doc.Data != nil {
-		return doc.Data
-	}
-	return []map[string]any{}
-}
-
 func executeMyTodoOverview(
 	ctx context.Context,
 	cfg Config,
@@ -1507,6 +1500,8 @@ func executeMyTodoOverview(
 
 	type teamEntry struct{ ID, Name string }
 	var teams []teamEntry
+	var reasons []string
+	teamListPartial := false
 	if targetTeamID != "" {
 		teams = []teamEntry{{ID: targetTeamID}}
 	} else {
@@ -1517,9 +1512,13 @@ func executeMyTodoOverview(
 		if code >= 400 {
 			return fmt.Sprintf("查询团队列表返回 HTTP %d:\n%s", code, agentText(body)), true
 		}
-		_, items := decodeMCPList(body)
+		doc, items := decodeMCPList(body)
 		if items == nil {
 			return "Tower 团队列表响应缺少有效 data 列表", true
+		}
+		teamListPartial = mcpListHasOmittedRows(doc, len(items))
+		if teamListPartial {
+			reasons = append(reasons, "Tower 只返回了部分团队")
 		}
 		for _, item := range items {
 			team, _ := item.(map[string]any)
@@ -1541,13 +1540,17 @@ func executeMyTodoOverview(
 		teams = teams[:maxOverviewTeams]
 	}
 	teamsSkipped := teamsAvailable - len(teams)
+	if teamsSkipped > 0 {
+		reasons = append(reasons, fmt.Sprintf("概览最多检查 %d 个团队，已跳过 %d 个团队", maxOverviewTeams, teamsSkipped))
+	}
 	teamResults := make([]map[string]any, 0, len(teams))
 	type todoTotals struct {
 		total, returned int
 		known           bool
 	}
-	assigned := todoTotals{known: teamsSkipped == 0}
-	created := todoTotals{known: teamsSkipped == 0}
+	assigned := todoTotals{known: teamsSkipped == 0 && !teamListPartial}
+	created := todoTotals{known: assigned.known}
+	memberFallback, itemLimit := false, false
 
 	loadTodos := func(entry map[string]any, memberID, list string, totals *todoTotals) {
 		path := "/api/v1/members/" + url.PathEscape(memberID) + "/" + list + "_todos"
@@ -1575,12 +1578,17 @@ func executeMyTodoOverview(
 		}
 		entry[list+"_todos"] = compactTodoItems(todos)
 		entry[list+"_returned"] = len(todos)
+		itemLimit = itemLimit || len(items) > limit
 		totals.returned += len(todos)
 
 		meta, _ := doc["meta"].(map[string]any)
 		total, known := mcpListTotal(meta)
 		if warning := meta["scope_warning"]; warning != nil {
 			entry[list+"_warning"] = warning
+		}
+		if reason := meta["incomplete_reason"]; reason != nil {
+			memberFallback = true
+			entry[list+"_incomplete_reason"] = reason
 		}
 		entry[list+"_count"] = "未知"
 		if known {
@@ -1603,7 +1611,7 @@ func executeMyTodoOverview(
 			} `json:"data"`
 		}
 		switch {
-		case err != nil || mCode >= 400:
+		case err != nil || mCode < 200 || mCode >= 300:
 			entry["error"] = "获取团队成员身份失败：" + overviewUpstreamError(mCode, err)
 		case json.Unmarshal(mBody, &memberDoc) != nil || memberDoc.Data.ID == "":
 			entry["error"] = "Tower 成员响应缺少有效成员 ID"
@@ -1644,6 +1652,18 @@ func executeMyTodoOverview(
 		if created.known {
 			summary["total_created_uncompleted"] = created.total
 		}
+	}
+	if teamsFailed > 0 {
+		reasons = append(reasons, fmt.Sprintf("%d 个团队的成员身份或任务查询失败", teamsFailed))
+	}
+	if memberFallback {
+		reasons = append(reasons, "部分任务来自可能省略记录的成员待办接口")
+	}
+	if itemLimit {
+		reasons = append(reasons, fmt.Sprintf("每个团队的每类任务最多显示 %d 条", limit))
+	}
+	if len(reasons) > 0 {
+		summary["incomplete_reason"] = strings.Join(reasons, "。")
 	}
 	out, _ := json.Marshal(summary)
 	return resultProfiles["my_todo_overview"].compositeText(out), false
