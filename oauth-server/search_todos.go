@@ -400,5 +400,8 @@ func executeSearchTodos(
 		payload["items"] = compactTodoItems(items)
 	}
 	out, _ := json.Marshal(payload)
-	return agentText(out), status >= 400
+	if status >= 400 {
+		return agentText(out), true
+	}
+	return resultProfiles["tower_search_todos"].compositeText(out), false
 }

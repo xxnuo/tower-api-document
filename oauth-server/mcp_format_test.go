@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -10,5 +12,52 @@ func TestCompactTodoList(t *testing.T) {
 	out, err := json.Marshal(compactTowerBody(raw, "tower_list_todos"))
 	if err != nil || string(out) != `{"items":[{"assignee":{"id":"m","nickname":"Alice"},"content":"task","id":"t","is_completed":false}],"next":"page2"}` {
 		t.Fatal(string(out), err)
+	}
+}
+
+func TestEveryRegisteredToolHasAResultProfile(t *testing.T) {
+	defs := listMCPToolDefinitions()
+	if len(defs) != len(resultProfiles) {
+		t.Fatalf("%d registered tools, %d profiles", len(defs), len(resultProfiles))
+	}
+	for _, d := range defs {
+		name := d["name"].(string)
+		t.Run(name, func(t *testing.T) {
+			p := resultProfiles[name]
+			if p.heading == "" || p.fields == "" {
+				t.Fatal("missing result profile")
+			}
+			fields := strings.Fields(p.fields)
+			record := map[string]any{"extra_upstream_field": "extra-value"}
+			for _, f := range fields {
+				if f != "*" {
+					record[f] = "value-for-" + f + "!"
+				}
+			}
+			text := p.text(record)
+			for _, f := range fields {
+				if f != "*" && !strings.Contains(text, "value-for-"+f+"!") {
+					t.Errorf("missing %s in %s", f, text)
+				}
+			}
+			if strings.Contains(text, "extra-value") != slices.Contains(fields, "*") {
+				t.Fatalf("unexpected extension field handling: %s", text)
+			}
+		})
+	}
+}
+
+func TestMemberTodoViews(t *testing.T) {
+	raw := []byte(`{"data":[{"id":"T1","type":"todos","attributes":{"content":"发布","due_at":"周五","completed_at":"周一","is_completed":true},"relationships":{"assignee":{"data":{"id":"M1","type":"members"}}}}]}`)
+	for _, tc := range []struct{ tool, want, omit string }{
+		{"tower_list_member_created_uncompleted_todos", "M1", "周一"},
+		{"tower_list_member_assigned_uncompleted_todos", "周五", "M1"},
+		{"tower_list_member_assigned_completed_todos", "周一", "周五"},
+	} {
+		p := resultProfiles[tc.tool]
+		text := p.text(compactTowerBody(raw, tc.tool))
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.omit) {
+			t.Errorf("%s: %s", tc.tool, text)
+		}
 	}
 }

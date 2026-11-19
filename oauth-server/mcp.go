@@ -952,6 +952,22 @@ func dispatchMCPMethod(
 			callParams.Arguments = map[string]any{}
 		}
 		text, isErr := executeMCPTool(ctx, cfg, mcpKey, acc, toolIndex, callParams.Name, callParams.Arguments)
+		if !isErr {
+			profile := resultProfiles[callParams.Name]
+			heading := profile.heading
+			if spec, ok := toolIndex[callParams.Name]; ok {
+				var scope []string
+				for _, param := range spec.Params {
+					if param.In == "path" {
+						scope = append(scope, param.Name+"="+stringifyArg(callParams.Arguments[param.Name]))
+					}
+				}
+				if len(scope) > 0 {
+					heading += "（" + strings.Join(scope, "，") + "）"
+				}
+			}
+			text = heading + "\n" + text
+		}
 		return rpcResult(rpcReq.ID, map[string]any{
 			"content": []map[string]any{
 				{"type": "text", "text": text},
@@ -1367,10 +1383,7 @@ func callTowerForMCP(
 		return fmt.Sprintf("操作成功 (HTTP %d)", statusCode), false
 	}
 	if tool != "tower_raw_request" {
-		out, err := json.Marshal(compactTowerBody(respBytes, tool))
-		if err == nil {
-			return agentText(out), false
-		}
+		return resultProfiles[tool].text(compactTowerBody(respBytes, tool)), false
 	}
 	return agentText(respBytes), false
 }
@@ -1551,7 +1564,7 @@ func executeMyTodoOverview(
 		summary["total_created_uncompleted"] = totalCreated
 	}
 	out, _ := json.Marshal(summary)
-	return agentText(out), false
+	return resultProfiles["tower_my_todo_overview"].compositeText(out), false
 }
 
 func executeUploadFile(
@@ -1674,5 +1687,5 @@ func executeUploadFile(
 		"md5":          md5Hex,
 		"upload":       compactTowerBody(cBody, "tower_create_upload"),
 	})
-	return agentText(result), false
+	return resultProfiles["tower_upload_file"].compositeText(result), false
 }

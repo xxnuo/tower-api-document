@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -72,18 +73,24 @@ func compactResource(item map[string]any, summary bool, included map[[2]string]m
 }
 
 func compactTowerBody(raw []byte, tool string) any {
-	var doc map[string]any
+	var value any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if !json.Valid(raw) {
 		return string(raw)
 	}
-	if dec.Decode(&doc) != nil || doc == nil {
-		return json.RawMessage(raw)
+	if dec.Decode(&value) != nil {
+		return string(raw)
+	}
+	doc, ok := value.(map[string]any)
+	if rows, isArray := value.([]any); isArray {
+		doc = map[string]any{"data": rows}
+	} else if !ok {
+		return value
 	}
 	data, ok := doc["data"]
 	if !ok {
-		return doc
+		return resultProfiles[tool].selectFields(doc)
 	}
 	included := map[[2]string]map[string]any{}
 	rows, _ := doc["included"].([]any)
@@ -99,12 +106,12 @@ func compactTowerBody(raw []byte, tool string) any {
 		if tool == "tower_get_team_resource" && d["type"] != nil {
 			out["type"] = d["type"]
 		}
-		return out
+		return resultProfiles[tool].selectFields(out)
 	case []any:
 		items := make([]any, 0, len(d))
 		for _, v := range d {
 			if r, ok := v.(map[string]any); ok {
-				v = compactResource(r, true, included)
+				v = resultProfiles[tool].selectFields(compactResource(r, false, included))
 			}
 			items = append(items, v)
 		}
@@ -130,27 +137,39 @@ func compactTodoItems(rows []map[string]any) []map[string]any {
 // agentText renders Tower values as records and indented sections. Keep the
 // leading list record stable: the web inspector uses it for resource pickers.
 func agentText(raw []byte) string {
+	return resultProfile{fields: "*"}.compositeText(raw)
+}
+
+func (p resultProfile) compositeText(raw []byte) string {
 	var value any
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	if !json.Valid(raw) || d.Decode(&value) != nil {
 		return strings.TrimSpace(string(raw))
 	}
-	return renderAgentValue(value)
+	return p.text(value)
 }
 
 var agentLabels = map[string]string{
 	"id": "ID", "name": "名称", "nickname": "昵称", "content": "内容", "desc": "描述", "title": "标题", "subject": "主题", "items": "结果", "meta": "分页", "next": "下一页", "has_more": "还有下一页", "page": "页码", "page_size": "每页数量", "original_count": "总条数", "returned": "本页条数", "truncated": "已截断", "is_completed": "已完成", "is_archived": "已归档", "is_active": "启用", "role": "角色", "team_wide_id": "任务编号", "assignee": "负责人", "creator": "创建人", "due_at": "截止日期", "created_at": "创建时间", "updated_at": "更新时间", "comments": "评论", "attachments": "附件", "teams": "团队", "assigned_uncompleted_todos": "指派给我的待办", "created_uncompleted_todos": "我创建的待办", "warnings": "提醒", "error": "错误", "url": "地址", "duration": "时长", "filename": "文件名", "project": "项目", "priority": "优先级",
 }
 
-func renderAgentValue(value any) string {
+func renderAgentValue(value any, preferred ...string) string {
 	switch v := value.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
+		for _, k := range preferred {
+			if _, ok := v[k]; ok {
+				keys = append(keys, k)
+			}
 		}
-		sort.Strings(keys)
+		n := len(keys)
+		for k := range v {
+			if !slices.Contains(preferred, k) {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys[n:])
 		lines := make([]string, 0, len(keys))
 		for _, k := range keys {
 			label := agentLabels[k]
